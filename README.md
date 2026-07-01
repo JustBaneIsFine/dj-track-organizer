@@ -112,3 +112,12 @@ publicly accessible pages through your own browser and stores only names and lin
 it does not download audio. You are solely responsible for ensuring your use complies
 with SoundCloud's Terms of Service and applicable law. This project is not affiliated
 with, authorized, or endorsed by SoundCloud.
+
+## Contact
+
+Questions, ideas, or just want to say hi? Here's how to reach out:
+
+- **Email:** djtezej@gmail.com
+- **Bug reports & feature requests:** [open an issue](https://github.com/JustBaneIsFine/dj-track-organizer/issues/new)
+
+The in-app **Contact** button (About window) opens this page.

@@ -381,7 +381,7 @@
           <div style="display:flex; gap:8px; flex-wrap:wrap">
             <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Source on GitHub ↗</button>
             <button x-show="meta.issues_url" @click="window.open(meta.issues_url, '_blank')">Report a bug ↗</button>
-            <button x-show="meta.contact_email" @click="window.open('mailto:' + meta.contact_email)">Contact</button>
+            <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Contact</button>
           </div>
           <div class="muted" style="font-size:11px; margin-top:10px">
             MIT licensed · Use at your own risk · Not affiliated with SoundCloud
