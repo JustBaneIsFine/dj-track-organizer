@@ -1,5 +1,7 @@
 # DJ Track Organizer
 
+![DJ Track Organizer](docs/mainpic.png)
+
 A local, offline desktop app for organizing the tracks you want to work through.
 It collects track **names and links** from SoundCloud artist pages, lets you sort
 them by priority, mark what you've listened to or want to revisit, flag what you
@@ -127,9 +129,5 @@ with, authorized, or endorsed by SoundCloud.
 
 ## Contact
 
-Questions, ideas, or just want to say hi? Here's how to reach out:
-
 - **Email:** djtezej@gmail.com
 - **Bug reports & feature requests:** [open an issue](https://github.com/JustBaneIsFine/dj-track-organizer/issues/new)
-
-The in-app **Contact** button (About window) opens this page.
