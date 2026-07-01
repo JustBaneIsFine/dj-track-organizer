@@ -29,10 +29,15 @@ import webbrowser
 # the app is fully self-contained and offline. Must be set before Playwright
 # is imported anywhere.
 if getattr(sys, "frozen", False):
-    os.environ.setdefault(
-        "PLAYWRIGHT_BROWSERS_PATH",
-        str(__import__("pathlib").Path(sys._MEIPASS) / "pw-browsers"),  # type: ignore[attr-defined]
-    )
+    from pathlib import Path as _Path
+
+    if sys.platform == "darwin":
+        # Copied into the .app after the build (see build.py): the executable lives
+        # at DJOrganizer.app/Contents/MacOS/, so Resources is one level up.
+        _browsers = _Path(sys.executable).resolve().parent.parent / "Resources" / "pw-browsers"
+    else:
+        _browsers = _Path(sys._MEIPASS) / "pw-browsers"  # type: ignore[attr-defined]
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(_browsers))
 
 import config
 
