@@ -19,11 +19,21 @@
 
   <!-- Update-available banner -->
   <template x-if="updateAvailable">
-    <div class="banner" x-cloak>
-      <span>⬆ Version <b x-text="updateAvailable.version"></b> is available.</span>
-      <span class="spacer"></span>
-      <button class="primary" @click="window.open(updateAvailable.url, '_blank')">Download</button>
-      <button class="ghost" @click="updateAvailable=null">Dismiss</button>
+    <div class="banner update-banner" x-cloak>
+      <div class="update-row">
+        <span>⬆ <b>Version <span x-text="updateAvailable.version"></span></b> is available
+          <span class="muted" x-text="'(you have ' + (meta.version || '?') + ')'"></span></span>
+        <span class="spacer"></span>
+        <button class="primary" @click="window.open(updateAvailable.download, '_blank')">Download</button>
+        <button class="ghost" x-show="updateAvailable.page" @click="window.open(updateAvailable.page, '_blank')">Details ↗</button>
+        <button class="ghost" @click="updateAvailable = null">Dismiss</button>
+      </div>
+      <div class="update-notes" x-show="updateAvailable.notes" x-text="updateAvailable.notes"></div>
+      <div class="update-how">
+        <b>How to update:</b> download the zip, delete your old DJOrganizer folder, then extract the new
+        one in its place. Your library, settings, and login are stored separately in your home folder
+        (<code>.dj-organizer</code>) and stay safe.
+      </div>
     </div>
   </template>
 

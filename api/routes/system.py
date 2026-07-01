@@ -7,6 +7,7 @@ pings stop (tab closed). Native mode never arms the watchdog, so pings are no-op
 """
 from __future__ import annotations
 
+import sys
 import time
 
 from fastapi import APIRouter
@@ -15,17 +16,29 @@ import config
 
 router = APIRouter(tags=["system"])
 
+# Release zip name per platform (matches the CI upload names). Linux has no build.
+_ASSETS = {
+    "win32": "DJOrganizer_windows.zip",
+    "darwin": "DJOrganizer_mac_apple-silicon.zip",
+}
+
 
 @router.get("/api/meta")
 async def meta():
     repo = config.GITHUB_REPO
     base = f"https://github.com/{repo}" if repo else ""
+    plat = "windows" if sys.platform == "win32" else "mac" if sys.platform == "darwin" else "linux"
+    asset = _ASSETS.get(sys.platform)
+    # GitHub's stable redirect always points at the newest release's asset.
+    download_url = f"{base}/releases/latest/download/{asset}" if base and asset else f"{base}/releases/latest"
     return {
         "version": config.APP_VERSION,
         "repo": repo,
         "github_url": base,
         "issues_url": f"{base}/issues/new" if base else "",
         "releases_url": f"{base}/releases/latest" if base else "",
+        "download_url": download_url,
+        "platform": plat,
         "contact_email": config.CONTACT_EMAIL,
     }
 

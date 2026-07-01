@@ -259,6 +259,13 @@ a { color: var(--accent); text-decoration: none; }
 .banner { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
   background: rgba(224,184,74,.1); border-bottom: 1px solid var(--warn); font-size: 13px; }
 .banner .spacer { flex: 1; }
+.update-banner { flex-direction: column; align-items: stretch; gap: 8px; }
+.update-row { display: flex; align-items: center; gap: 8px; }
+.update-notes { white-space: pre-wrap; font-size: 12px; line-height: 1.5; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 10px; max-height: 160px; overflow-y: auto; }
+.update-how { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+.update-how code { font-family: var(--mono); background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 
 /* Toast */
 .toasts { position: fixed; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }

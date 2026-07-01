@@ -269,7 +269,12 @@ function djApp() {
         const rel = await res.json();
         const latest = (rel.tag_name || "").replace(/^v/, "");
         if (latest && this._verGreater(latest, this.meta.version || "0.0.0"))
-          this.updateAvailable = { version: latest, url: rel.html_url || this.meta.releases_url };
+          this.updateAvailable = {
+            version: latest,
+            notes: this._cleanNotes(rel.body || ""),
+            page: rel.html_url || this.meta.releases_url,
+            download: this.meta.download_url || rel.html_url || this.meta.releases_url,
+          };
       } catch (e) {}
     },
 
@@ -280,6 +285,15 @@ function djApp() {
         if (x !== y) return x > y;
       }
       return false;
+    },
+    // Trim release-notes markdown down to the changelog lines for the banner:
+    // drop the version header and the standard "100% local…" footer.
+    _cleanNotes(body) {
+      return String(body)
+        .split(/\r?\n/)
+        .filter((l) => !/^\s*#/.test(l) && !/^\s*100% local/i.test(l))
+        .join("\n")
+        .trim();
     },
     async saveSettings() {
       try {
