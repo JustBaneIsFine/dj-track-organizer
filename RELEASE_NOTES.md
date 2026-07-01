@@ -1,11 +1,5 @@
-## v0.1.0
+## v0.1.1
 
-First public release.
-
-- Organize SoundCloud track names and links locally: priority stars, listened/revisit, owned.
-- Careful, logged-out scraping with early-stop once it reaches tracks you already have.
-- "Check folder" matches a local music folder against your library by filename only.
-- Captures each track's buy / free-download link for faster revisit triage.
-- Windows and macOS (Apple Silicon) builds.
+- Contact button in the About window now jumps straight to the Contact section on the project page.
 
 100% local: no accounts, no telemetry. Provided as is, use at your own risk. Not affiliated with SoundCloud.
