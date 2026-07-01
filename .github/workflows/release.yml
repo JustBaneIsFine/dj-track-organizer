@@ -1,0 +1,71 @@
+name: Build and release
+
+# Push to main: builds Windows + macOS (Apple Silicon) and uploads them as artifacts.
+# Tag v*: same, then publishes a GitHub Release with the zips attached.
+# GitHub retired free Intel macOS runners, so Intel Macs run from source.
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Build
+        run: python build.py
+      - name: Zip
+        shell: pwsh
+        run: |
+          Copy-Item LICENSE dist/DJOrganizer/LICENSE.txt
+          Compress-Archive -Path "dist/DJOrganizer" -DestinationPath "dist/DJOrganizer_windows.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJOrganizer_windows
+          path: dist/DJOrganizer_windows.zip
+
+  build-mac-arm:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Build
+        run: python build.py
+      - name: Zip
+        run: |
+          cp LICENSE dist/LICENSE.txt
+          cd dist && zip -q -r -y "DJOrganizer_mac_apple-silicon.zip" "DJOrganizer.app" LICENSE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJOrganizer_mac_apple-silicon
+          path: dist/DJOrganizer_mac_apple-silicon.zip
+
+  release:
+    needs: [build-windows, build-mac-arm]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          body_path: RELEASE_NOTES.md

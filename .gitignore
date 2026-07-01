@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.exe
+
+# Bundled Chromium (downloaded at build time, never committed)
+pw-browsers/
+
+# Local databases, logs, user data
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Secrets / local env
+.env
+.env.*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Agent/session scratch
+.claude/
+
+# Internal dev notes (not published)
+RESUME.md
+PROJECT_CONTEXT.md
+DJ track organizer.md
