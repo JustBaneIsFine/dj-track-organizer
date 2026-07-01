@@ -54,6 +54,18 @@ the native window doesn't appear on Windows, install the
 otherwise falls back to your default browser. Data lives at
 `~/.dj-organizer/dj_organizer.db`.
 
+## Updating
+
+Download the new zip, delete your old `DJOrganizer` folder, and extract the new one in
+its place. Your data is stored separately (see below), so it carries over untouched. The
+app also shows an in-app banner when a newer release is available.
+
+## Uninstall
+
+Delete the `DJOrganizer` folder (or the `.app` on macOS). To also remove your data,
+delete `~/.dj-organizer/` (on Windows, `%USERPROFILE%\.dj-organizer`) — it holds the
+database, logs, and saved browser login. If you want a backup first, use Export in Settings.
+
 ## Privacy
 
 100% local. No accounts, no analytics, no telemetry. The only outbound network calls

@@ -29,6 +29,7 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item LICENSE dist/DJOrganizer/LICENSE.txt
+          Copy-Item THIRD-PARTY-NOTICES.txt dist/DJOrganizer/THIRD-PARTY-NOTICES.txt
           Compress-Archive -Path "dist/DJOrganizer" -DestinationPath "dist/DJOrganizer_windows.zip"
       - uses: actions/upload-artifact@v4
         with:
@@ -48,7 +49,8 @@ jobs:
       - name: Zip
         run: |
           cp LICENSE dist/LICENSE.txt
-          cd dist && zip -q -r -y "DJOrganizer_mac_apple-silicon.zip" "DJOrganizer.app" LICENSE.txt
+          cp THIRD-PARTY-NOTICES.txt dist/THIRD-PARTY-NOTICES.txt
+          cd dist && zip -q -r -y "DJOrganizer_mac_apple-silicon.zip" "DJOrganizer.app" LICENSE.txt THIRD-PARTY-NOTICES.txt
       - uses: actions/upload-artifact@v4
         with:
           name: DJOrganizer_mac_apple-silicon

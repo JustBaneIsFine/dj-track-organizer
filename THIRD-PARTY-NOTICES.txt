@@ -1,0 +1,47 @@
+THIRD-PARTY NOTICES
+===================
+
+DJ Track Organizer is distributed with, or depends on, the third-party
+components listed below. Each remains under its own license, held by its
+respective authors. Full license texts are available from each project.
+
+This file is provided for attribution. It is a summary, not legal advice.
+
+
+Python packages
+---------------
+
+FastAPI            MIT License            https://github.com/fastapi/fastapi
+Starlette          BSD 3-Clause           https://github.com/encode/starlette
+Uvicorn            BSD 3-Clause           https://github.com/encode/uvicorn
+Pydantic           MIT License            https://github.com/pydantic/pydantic
+anyio              MIT License            https://github.com/agronholm/anyio
+h11                MIT License            https://github.com/python-hyper/h11
+websockets         BSD 3-Clause           https://github.com/python-websockets/websockets
+click              BSD 3-Clause           https://github.com/pallets/click
+aiosqlite          MIT License            https://github.com/omnilib/aiosqlite
+RapidFuzz          MIT License            https://github.com/rapidfuzz/RapidFuzz
+Playwright         Apache License 2.0     https://github.com/microsoft/playwright-python
+pywebview          BSD 3-Clause           https://github.com/r0x0r/pywebview
+proxy_tools        MIT License            https://github.com/r0x0r/pywebview
+pythonnet          MIT License            https://github.com/pythonnet/pythonnet   (Windows only)
+
+
+Bundled browser
+---------------
+
+Chromium / "Chrome for Testing"
+  Downloaded and bundled via Playwright so the app is self-contained.
+  Chromium is licensed under the BSD 3-Clause License, together with the
+  additional open-source licenses of its own third-party components.
+  https://www.chromium.org/  ·  chrome://credits (in any Chromium build)
+
+
+Frontend
+--------
+
+Alpine.js          MIT License            https://github.com/alpinejs/alpine
+
+
+Python and its standard library are used under the Python Software Foundation
+License. https://docs.python.org/3/license.html

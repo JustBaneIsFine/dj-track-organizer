@@ -27,6 +27,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import config
+
 ROOT = Path(__file__).resolve().parent
 BROWSERS = ROOT / "pw-browsers"
 SEP = os.pathsep  # ';' on Windows, ':' elsewhere
@@ -38,6 +40,40 @@ def run(cmd: list[str], **env_extra) -> None:
     env = {**os.environ, **env_extra}
     print(">", " ".join(cmd))
     subprocess.run(cmd, check=True, env=env)
+
+
+def write_win_version_file() -> Path:
+    """Generate a Windows version resource from APP_VERSION so the .exe Properties
+    show a real product name and version instead of blanks."""
+    parts = [int(x) for x in config.APP_VERSION.split(".")[:3]]
+    while len(parts) < 4:
+        parts.append(0)
+    v = config.APP_VERSION
+    vers = tuple(parts)
+    path = ROOT / "version_info.txt"
+    path.write_text(
+        f"""VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={vers}, prodvers={vers},
+    mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('CompanyName', 'Tezej'),
+      StringStruct('FileDescription', 'DJ Track Organizer'),
+      StringStruct('FileVersion', '{v}'),
+      StringStruct('InternalName', 'DJOrganizer'),
+      StringStruct('OriginalFilename', 'DJOrganizer.exe'),
+      StringStruct('ProductName', 'DJ Track Organizer'),
+      StringStruct('ProductVersion', '{v}'),
+      StringStruct('LegalCopyright', 'Copyright (c) 2026 Tezej'),
+    ])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+""",
+        encoding="utf-8",
+    )
+    return path
 
 
 def main() -> None:
@@ -71,6 +107,7 @@ def main() -> None:
     ]
     if IS_WIN:
         cmd += ["--hidden-import", "clr"]      # pythonnet (WebView2 backend), Windows only
+        cmd += ["--version-file", str(write_win_version_file())]
     # App/window/taskbar icon. Windows uses .ico, macOS uses .icns.
     icon = ROOT / "frontend" / "assets" / ("icon.ico" if IS_WIN else "icon.icns")
     if icon.exists():
