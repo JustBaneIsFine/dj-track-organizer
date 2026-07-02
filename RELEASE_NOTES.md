@@ -1,6 +1,6 @@
-## v0.1.2
+## v0.1.3
 
-- Update notifications now list what changed and add a one-click direct download.
-- Added clear in-app instructions for installing an update, and a reminder that your library and settings stay safe.
+- Fixed: a track's saved download/buy link is no longer lost when you run an update.
+- Minor wording tweaks to the alternate-names fields.
 
 100% local: no accounts, no telemetry. Provided as is, use at your own risk. Not affiliated with SoundCloud.
