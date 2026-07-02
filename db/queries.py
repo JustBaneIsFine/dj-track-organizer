@@ -547,9 +547,12 @@ async def upsert_track(
             existing = await cur.fetchone()
 
     if existing:
+        # Keep any previously captured purchase_url when a re-scrape doesn't find one
+        # (COALESCE keeps the old value when the new one is NULL), so updates never
+        # wipe a link that was captured before.
         await conn.execute(
             "UPDATE tracks SET last_seen = ?, name = ?, dedup_key = ?, group_key = ?, "
-            "purchase_url = ?, purchase_checked = 1 WHERE id = ?",
+            "purchase_url = COALESCE(?, purchase_url), purchase_checked = 1 WHERE id = ?",
             (ts, name, key, gkey, purchase_url, existing["id"]),
         )
         return False

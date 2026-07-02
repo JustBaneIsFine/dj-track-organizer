@@ -521,7 +521,8 @@
           </div>
           <div class="field">
             <label>Alternate names (optional, comma-separated)</label>
-            <input type="text" x-model="interactive.aliasText" placeholder="real/display name if it differs from the handle" />
+            <input type="text" x-model="interactive.aliasText" placeholder="e.g. Real Name, alt spelling" />
+            <span class="muted" style="font-size:11px">Used to match files like "Real Name - Title" to this artist.</span>
           </div>
           <div class="field">
             <label>Notes (optional)</label>
@@ -635,9 +636,9 @@
             <input type="number" x-model="artistPanel.repost_limit" @keydown.enter.prevent="saveArtistPanel()" />
           </div>
           <div class="field">
-            <label>Alternate names (comma-separated)</label>
-            <input type="text" x-model="artistPanel._aliasText" placeholder="e.g. Beathoven, Beat" @keydown.enter.prevent="saveArtistPanel()" />
-            <span class="muted" style="font-size:11px">Used to match files like "Beathoven - Title" to this artist.</span>
+            <label>Alternate names (optional, comma-separated)</label>
+            <input type="text" x-model="artistPanel._aliasText" placeholder="e.g. Real Name, alt spelling" @keydown.enter.prevent="saveArtistPanel()" />
+            <span class="muted" style="font-size:11px">Used to match files like "Real Name - Title" to this artist.</span>
           </div>
           <div class="field">
             <label>Notes</label>
