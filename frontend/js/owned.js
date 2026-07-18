@@ -1,6 +1,6 @@
 // "Check folder for tracks I already own."
-// The browser folder picker exposes only file NAMES - never contents, never write
-// access - so the app cannot read, move, or modify any of the user's files.
+// Only file NAMES are collected and matched; the app never modifies files. A match
+// can be handed to the OS to play in the user's default player on request.
 window.DJ = window.DJ || {};
 window.DJ.ownedMixin = {
   ownedReview: null,   // { scanned, matches:[], threshold }
@@ -11,16 +11,18 @@ window.DJ.ownedMixin = {
   _audioExts: [".mp3", ".flac", ".wav", ".aif", ".aiff", ".m4a", ".aac", ".ogg", ".wma", ".alac"],
 
   // Pick a folder WITHOUT the browser's scary "upload" dialog.
-  // Chromium: File System Access API (reads names only, sandboxed).
-  // Other browsers: native OS folder dialog on the local app.
+  // Native OS dialog first: the server walks names AND remembers paths, so a match
+  // can be opened in the default player. The sandboxed File System Access picker
+  // stays as a fallback (names only, no paths).
   // opts: { artistId, floor } - set for the per-artist "Check folder" (scoped pool,
   // more lenient floor); omitted for the whole-library scan.
   async pickFolder(opts) {
     opts = opts || {};
-    if (window.showDirectoryPicker) {
-      await this._pickViaFsApi(opts);
-    } else {
+    try {
       await this._pickViaNative(opts);
+    } catch (err) {
+      if (window.showDirectoryPicker) await this._pickViaFsApi(opts);
+      else this.toast(err.message, "err");
     }
   },
 
@@ -79,6 +81,7 @@ window.DJ.ownedMixin = {
     finally { this.ownedBusy = false; this.ownedScan = null; }
   },
 
+  // Throws on failure (no dialog available etc.) so pickFolder can fall back.
   async _pickViaNative(opts) {
     this.ownedBusy = true;
     this.ownedScan = { phase: "native", count: 0 };
@@ -87,8 +90,7 @@ window.DJ.ownedMixin = {
       const r = await api.pickFolderNative(opts.artistId, floor);
       if (r.cancelled) return;
       this._openReview(r, floor);
-    } catch (err) { this.toast(err.message, "err"); }
-    finally { this.ownedBusy = false; this.ownedScan = null; }
+    } finally { this.ownedBusy = false; this.ownedScan = null; }
   },
 
   // For an artist-scoped scan the review slider starts at the (lower) scan floor so
@@ -96,9 +98,11 @@ window.DJ.ownedMixin = {
   _openReview(r, floor) {
     const dflt = parseInt(this.settings.owned_match_threshold || 98);
     const scoped = floor != null && floor < parseInt(this.settings.owned_match_floor || 90);
+    (r.matches || []).forEach((m) => { m.sel = true; });
     this.ownedReview = {
       scanned: r.scanned,
       matches: r.matches,
+      hasPaths: !!r.has_paths,               // native scan → matches can be played locally
       threshold: (floor != null && floor < dflt) ? floor : dflt,
       floor: floor != null ? floor : null,  // slider min for this scan
       scoped,                                // artist-scoped → don't persist global strictness
@@ -110,10 +114,17 @@ window.DJ.ownedMixin = {
     if (!this.ownedReview) return [];
     return this.ownedReview.matches.filter((m) => m.score >= this.ownedReview.threshold);
   },
+  ownedSelected() { return this.ownedDisplayed().filter((m) => m.sel); },
+  setAllMatches(v) { this.ownedDisplayed().forEach((m) => { m.sel = v; }); },
+
+  async openLocalFile(m) {
+    try { await api.openOwnedFile(m.filename); }
+    catch (err) { this.toast("Could not open the file: " + err.message, "err"); }
+  },
 
   async applyOwned(action) {
-    const ids = this.ownedDisplayed().map((m) => m.track_id);
-    if (!ids.length) { this.toast("No matches at this strictness", "warn"); return; }
+    const ids = this.ownedSelected().map((m) => m.track_id);
+    if (!ids.length) { this.toast("No matches selected", "warn"); return; }
     const fields = action === "delete" ? { is_deleted: 1 } : { is_owned: 1 };
     try {
       await api.bulkTracks({ ids, ...fields });

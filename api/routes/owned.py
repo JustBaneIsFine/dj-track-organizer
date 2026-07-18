@@ -1,12 +1,16 @@
-"""'Tracks I already own' - folder scan endpoint.
+"""'Tracks I already own' - folder scan endpoints.
 
-READ-ONLY: receives a list of file *names* (collected by the browser's folder
-picker) and fuzzily matches them against the library. It never touches files,
-and it changes nothing in the DB - applying the result reuses PATCH /tracks/bulk.
+Receives file *names* (native dialog walk, or the browser's folder picker) and
+fuzzily matches them against the library. Files are never modified; /open hands a
+matched file to the OS default player on explicit request. Applying the result
+changes nothing here - it reuses PATCH /tracks/bulk.
 """
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
+import sys
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,6 +27,11 @@ router = APIRouter(prefix="/api/owned", tags=["owned"])
 # determinate progress bar while a (potentially large) scan runs off the event loop.
 # Values are 0-100; an absent token means "no scan / done".
 SCAN_PROGRESS: dict[str, int] = {}
+
+# basename -> abspath from the most recent native folder scan, so a match can be
+# opened in the default player. Only /open reads it, and /open only accepts names
+# from this map (never a path from the client). Browser-picker scans clear it.
+LAST_SCAN_PATHS: dict[str, str] = {}
 
 
 class ScanBody(BaseModel):
@@ -84,23 +93,53 @@ async def progress(token: str):
 @router.post("/scan")
 async def scan(body: ScanBody, db=Depends(get_db)):
     """Match a list of file names (from the browser folder picker) - read-only."""
-    return await _match_against_library(
+    LAST_SCAN_PATHS.clear()  # browser picker gives names only, no paths to open
+    result = await _match_against_library(
         db, body.filenames, body.floor, body.artist_id, body.token
     )
+    result["has_paths"] = False
+    return result
 
 
 @router.post("/pick")
 async def pick(artist_id: Optional[int] = None, floor: Optional[int] = None,
                token: Optional[str] = None, db=Depends(get_db)):
-    """Fallback for browsers without the File System Access API: open a native OS
-    folder dialog on this machine, list names (read-only), and match them."""
+    """Open a native OS folder dialog on this machine, list names (read-only),
+    and match them. Primary picker; also remembers name->path so a match can be
+    opened in the default player."""
     try:
         path = await asyncio.get_event_loop().run_in_executor(None, folder_pick.ask_directory)
     except Exception as e:  # noqa: BLE001 - e.g. no display / tkinter missing
         raise HTTPException(500, f"Could not open folder dialog: {e}")
     if not path:
         return {"cancelled": True}
-    names = folder_pick.walk_audio_names(path)
+    names, paths = folder_pick.walk_audio_paths(path)
+    LAST_SCAN_PATHS.clear()
+    LAST_SCAN_PATHS.update(paths)
     result = await _match_against_library(db, names, floor, artist_id, token)
     result["cancelled"] = False
+    result["has_paths"] = True
     return result
+
+
+class OpenBody(BaseModel):
+    filename: str
+
+
+@router.post("/open")
+async def open_file(body: OpenBody):
+    """Open a scanned file in the OS default player. Only accepts basenames from
+    the last native scan, so no arbitrary path can be opened."""
+    path = LAST_SCAN_PATHS.get(body.filename)
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "File not known from the last folder scan")
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)  # noqa: S606 - user-chosen folder, OS default handler
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Could not open the file: {e}")
+    return {"ok": True}

@@ -5,8 +5,8 @@
 A local, offline desktop app for organizing the tracks you want to work through.
 It collects track **names and links** from SoundCloud artist pages, lets you sort
 them by priority, mark what you've listened to or want to revisit, flag what you
-already own, and keep the list updated. It never downloads or touches audio files,
-and everything stays on your computer.
+already own, and keep the list updated. It never downloads or modifies audio files;
+it only collects names and links, and everything stays on your computer.
 
 > **Read this first.** This tool reads **public** SoundCloud pages through your own
 > browser to collect names and links only. Please use it responsibly and respect
@@ -18,7 +18,8 @@ and everything stays on your computer.
 
 - Collect originals and reposts from artist pages, with cross-artist repost merging
 - Priority stars, status tracking (new / listened / revisit), and "owned" flagging
-- "Check folder" matches a local music folder against your library by filename only
+- "Check folder" matches a local music folder against your library by filename only,
+  with a review step where you can play a match in your default player and untick false hits
 - Capture each track's buy / free-download link and triage by where it points
 - Careful, sequential, anti-bot-aware scraping that runs **logged out by default**
 - Everything local: no account, no telemetry, no data leaves your machine
@@ -65,7 +66,7 @@ app also shows an in-app banner when a newer release is available.
 ## Uninstall
 
 Delete the `DJOrganizer` folder (or the `.app` on macOS). To also remove your data,
-delete `~/.dj-organizer/` (on Windows, `%USERPROFILE%\.dj-organizer`) — it holds the
+delete `~/.dj-organizer/` (on Windows, `%USERPROFILE%\.dj-organizer`); it holds the
 database, logs, and saved browser login. If you want a backup first, use Export in Settings.
 
 ## Privacy

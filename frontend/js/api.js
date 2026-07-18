@@ -76,6 +76,7 @@ window.api = (() => {
       return j("/api/owned/pick" + (qs ? "?" + qs : ""), { method: "POST" });
     },
     ownedProgress: (token) => j("/api/owned/progress?token=" + encodeURIComponent(token)),
+    openOwnedFile: (filename) => j("/api/owned/open", { method: "POST", ...body({ filename }) }),
 
     // sessions
     resumable: () => j("/api/sessions/resumable"),

@@ -416,7 +416,7 @@
             <div class="muted" style="font-size:11px; margin-top:4px"><span x-text="ownedScan.percent||0"></span>%</div>
           </div>
           <div x-show="ownedScan.phase==='native'">Waiting for you to choose a folder…</div>
-          <div class="muted" style="font-size:11px">Your files are never read or modified - only their names are checked.</div>
+          <div class="muted" style="font-size:11px">The app never modifies your files. Only their names are collected and checked.</div>
         </div>
       </div>
     </div>
@@ -430,21 +430,27 @@
         <div class="body">
           <div class="muted">
             Scanned <b x-text="ownedReview.scanned"></b> audio files ·
-            <b x-text="ownedDisplayed().length"></b> match at ≥ <b x-text="ownedReview.threshold"></b>%
+            <b x-text="ownedDisplayed().length"></b> match at ≥ <b x-text="ownedReview.threshold"></b>% ·
+            <b x-text="ownedSelected().length"></b> selected
+            <a href="#" @click.prevent="setAllMatches(true)" style="margin-left:6px">All</a> /
+            <a href="#" @click.prevent="setAllMatches(false)">None</a>
           </div>
-          <div class="muted" style="font-size:11px">Your files are never read or modified - only their names were checked.</div>
+          <div class="muted" style="font-size:11px">The app never modifies your files. It only collects names, and plays a file in your default player if you choose to.</div>
           <div class="field">
             <label>Match strictness: <b x-text="ownedReview.threshold + '%'"></b></label>
             <input type="range" :min="ownedReview.floor != null ? ownedReview.floor : ownedFloor()" max="100" step="1" x-model.number="ownedReview.threshold" />
           </div>
-          <div class="muted" style="font-size:11px">Tip: click a match to open the track on SoundCloud and confirm it's the same song.</div>
+          <div class="muted" style="font-size:11px">Tip: click a match to check it on SoundCloud<span x-show="ownedReview.hasPaths">, press ▶ to play your local file,</span> and untick the ones that are not really the same song.</div>
           <div class="preview" x-show="ownedDisplayed().length">
             <template x-for="m in ownedDisplayed()" :key="m.track_id">
               <div class="pv" :style="m.url ? 'cursor:pointer' : ''" @click="m.url && window.open(m.url, '_blank')"
                    :title="m.url ? 'Open on SoundCloud' : ''">
+                <input type="checkbox" x-model="m.sel" @click.stop title="Apply to this match" />
                 <span style="color:var(--accent)" x-text="m.score + '%'"></span>
                 <span x-text="(m.artist_name ? m.artist_name + ' - ' : '') + m.track_name"></span>
                 <span class="ext" x-show="m.url" style="opacity:.7">↗</span>
+                <button class="mini" x-show="ownedReview.hasPaths" @click.stop="openLocalFile(m)"
+                        title="Play the local file in your default player">▶</button>
                 <div class="muted" style="font-size:11px" x-text="'↳ ' + m.filename"></div>
               </div>
             </template>
@@ -454,8 +460,8 @@
         <div class="foot">
           <button @click="closeOwnedReview()">Cancel</button>
           <span style="flex:1"></span>
-          <button @click="applyOwned('delete')" :disabled="!ownedDisplayed().length">Soft-delete these</button>
-          <button class="primary" @click="applyOwned('own')" :disabled="!ownedDisplayed().length">✓ Tag as owned</button>
+          <button @click="applyOwned('delete')" :disabled="!ownedSelected().length">Soft-delete these</button>
+          <button class="primary" @click="applyOwned('own')" :disabled="!ownedSelected().length">✓ Tag as owned</button>
         </div>
       </div>
     </div>
