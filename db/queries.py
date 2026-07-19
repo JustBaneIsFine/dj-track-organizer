@@ -34,6 +34,13 @@ def norm_commas(s: Optional[str]) -> str:
     return _COMMA_WS_RE.sub(",", s or "")
 
 
+def notes_terms(query: Optional[str]) -> list[str]:
+    """Split a notes query into lowercased words (on commas and whitespace), so a
+    notes search matches artists whose notes contain ALL the words in any order:
+    'Baile, Jersey' finds notes written 'Baile,House,Jersey'."""
+    return [t for t in re.split(r"[,\s]+", (query or "").lower()) if t]
+
+
 def dedup_key(artist_name: Optional[str], title: str) -> str:
     """Normalized 'artist - title' identity for cross-platform grouping (future).
 
@@ -202,15 +209,16 @@ async def list_artists(
         where.append(f"a.id IN ({','.join('?' * len(artist_ids))})")
         params.extend(artist_ids)
     if search:
-        # find by name, alias, or notes. Notes are matched comma-insensitively so
-        # "Baile, House" finds notes written "Baile,House" (and vice-versa) - we
-        # normalize the query and REPLACE spaces *around commas* in the column.
-        nsearch = norm_commas(search)
-        where.append(
-            "(a.name LIKE ? OR a.aliases LIKE ? "
-            "OR REPLACE(REPLACE(a.notes, ', ', ','), ' ,', ',') LIKE ?)"
-        )
-        params.extend([f"%{search}%", f"%{search}%", f"%{nsearch}%"])
+        # find by name, alias, or notes. Notes match by WORD: every word in the
+        # query must appear (any order, any separators), so "Baile, Jersey" finds
+        # notes written "Baile,House,Jersey".
+        ors = ["a.name LIKE ?", "a.aliases LIKE ?"]
+        params.extend([f"%{search}%", f"%{search}%"])
+        terms = notes_terms(search)
+        if terms:
+            ors.append("(" + " AND ".join(["LOWER(a.notes) LIKE ?"] * len(terms)) + ")")
+            params.extend([f"%{t}%" for t in terms])
+        where.append("(" + " OR ".join(ors) + ")")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
     order = {
@@ -634,6 +642,41 @@ async def bulk_set_tracks(
     )
     await conn.commit()
     return cur.rowcount
+
+
+# Owned-scan rejections: (track, filename) pairs the user marked "not the same song".
+async def add_owned_rejections(
+    conn: aiosqlite.Connection, pairs: list[tuple[int, str]]
+) -> int:
+    if not pairs:
+        return 0
+    ts = now_iso()
+    await conn.executemany(
+        "INSERT OR IGNORE INTO owned_rejections (track_id, filename, created_at) VALUES (?, ?, ?)",
+        [(tid, fn, ts) for tid, fn in pairs if tid and fn],
+    )
+    await conn.commit()
+    return len(pairs)
+
+
+async def get_owned_rejections(
+    conn: aiosqlite.Connection, track_ids: Optional[list[int]] = None
+) -> dict[int, set[str]]:
+    """{track_id: {rejected filenames}} so the matcher can skip those exact pairs."""
+    if track_ids is not None:
+        if not track_ids:
+            return {}
+        placeholders = ",".join("?" * len(track_ids))
+        sql = f"SELECT track_id, filename FROM owned_rejections WHERE track_id IN ({placeholders})"
+        args = track_ids
+    else:
+        sql = "SELECT track_id, filename FROM owned_rejections"
+        args = []
+    out: dict[int, set[str]] = {}
+    async with conn.execute(sql, args) as cur:
+        async for row in cur:
+            out.setdefault(row["track_id"], set()).add(row["filename"])
+    return out
 
 
 # Import sessions

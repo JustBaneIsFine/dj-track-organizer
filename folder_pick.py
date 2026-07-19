@@ -30,12 +30,32 @@ def walk_audio_paths(root: str) -> tuple[list[str], dict[str, str]]:
     return names, paths
 
 
+# Set by main.py when running in the native pywebview window. Its folder dialog is
+# marshalled to the GUI thread by pywebview, which is reliable; tkinter in a worker
+# thread is not (it can deadlock on Windows), so prefer this when available.
+_WEBVIEW_WINDOW = None
+
+
+def set_webview_window(window) -> None:
+    global _WEBVIEW_WINDOW
+    _WEBVIEW_WINDOW = window
+
+
 def ask_directory() -> Optional[str]:
     """Show a native 'Select Folder' dialog; return the path or None if cancelled.
 
-    Blocking (GUI) - call from a thread/executor. Creates and tears down its own
-    hidden Tk root so it doesn't interfere with anything else.
+    Blocking (GUI) - call from a thread/executor. Uses the pywebview window's dialog
+    in native mode, and falls back to a hidden Tk root otherwise (browser mode).
     """
+    win = _WEBVIEW_WINDOW
+    if win is not None:
+        import webview
+
+        result = win.create_file_dialog(webview.FOLDER_DIALOG)
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else result
+
     import tkinter as tk
     from tkinter import filedialog
 

@@ -173,11 +173,24 @@ window.DJ.tracksMixin = {
     try { const r = await api.patchTrack(t.id, { is_deleted: 0, group: this._merged() }); this.loadTracks(); this._applyAffectedArtists(r); }
     catch (e) { this.toast(e.message, "err"); }
   },
+  // SoundCloud wraps external buy/download links in a "gate.sc/?url=..." redirect
+  // (its "leaving SoundCloud" page). Unwrap it so we open the real destination
+  // (hypeddit / gaterush / bandcamp / …) instead of a SoundCloud-branded page.
+  _unwrapDl(url) {
+    try {
+      const u = new URL(url);
+      if (u.hostname === "gate.sc" || u.hostname.endsWith(".gate.sc")) {
+        const inner = u.searchParams.get("url");
+        if (inner) return inner;
+      }
+    } catch (e) {}
+    return url;
+  },
   // Which URL a track opens: in the revisit view with the toggle on, prefer the
   // download/buy link when the track has one; otherwise the SoundCloud page.
   _openUrlFor(t) {
     const useDl = this.openDownloadLink && this.filters.status === "revisit" && t.purchase_url;
-    return useDl ? t.purchase_url : t.url;
+    return useDl ? this._unwrapDl(t.purchase_url) : t.url;
   },
   openTrack(t) { const u = this._openUrlFor(t); if (u) window.open(u, "_blank"); },
   // "Go to artist": filter the sidebar to just this artist (by name) so they're easy

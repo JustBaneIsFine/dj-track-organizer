@@ -30,7 +30,9 @@ window.DJ.ownedMixin = {
   async checkArtistFolder(a) {
     if (!a) return;
     const floor = parseInt(this.settings.owned_match_floor_artist || 88);
-    await this.pickFolder({ artistId: a.id, floor });
+    const artistId = a.id;
+    this.closeArtistPanel();  // so the scan/review isn't hidden behind the panel
+    await this.pickFolder({ artistId, floor });
   },
 
   // Poll matching progress (a determinate bar) while the scan runs off the event
@@ -81,16 +83,34 @@ window.DJ.ownedMixin = {
     finally { this.ownedBusy = false; this.ownedScan = null; }
   },
 
-  // Throws on failure (no dialog available etc.) so pickFolder can fall back.
+  // Two steps: open the folder dialog, then match. Splitting them lets the UI show
+  // "choose a folder" and then the matching progress bar. A dialog-open failure
+  // throws so pickFolder can fall back to the browser picker; a matching failure
+  // just toasts (the folder was already chosen, no point re-picking).
   async _pickViaNative(opts) {
     this.ownedBusy = true;
     this.ownedScan = { phase: "native", count: 0 };
+    let picked;
+    try {
+      picked = await api.pickFolderNative();
+    } catch (err) {
+      this.ownedBusy = false; this.ownedScan = null;
+      throw err;  // let pickFolder fall back to the File System Access picker
+    }
+    if (picked.cancelled) { this.ownedBusy = false; this.ownedScan = null; return; }
     try {
       const floor = opts.floor != null ? opts.floor : null;
-      const r = await api.pickFolderNative(opts.artistId, floor);
-      if (r.cancelled) return;
+      const token = this._newScanToken();
+      this.ownedScan = { phase: "matching", count: picked.count, percent: 0 };
+      await new Promise(r => setTimeout(r));  // let the progress modal paint
+      const stopPoll = this._startProgressPoll(token);
+      let r;
+      try { r = await api.scanPending(picked.pending, floor, opts.artistId, token); }
+      finally { stopPoll(); }
+      r.has_paths = picked.has_paths;
       this._openReview(r, floor);
-    } finally { this.ownedBusy = false; this.ownedScan = null; }
+    } catch (err) { this.toast(err.message, "err"); }
+    finally { this.ownedBusy = false; this.ownedScan = null; }
   },
 
   // For an artist-scoped scan the review slider starts at the (lower) scan floor so
@@ -124,19 +144,24 @@ window.DJ.ownedMixin = {
 
   async applyOwned(action) {
     const ids = this.ownedSelected().map((m) => m.track_id);
-    if (!ids.length) { this.toast("No matches selected", "warn"); return; }
+    // Unticked matches are "not the same song" - remember them so they never match again.
+    const rejects = this.ownedDisplayed().filter((m) => !m.sel)
+      .map((m) => ({ track_id: m.track_id, filename: m.filename }));
+    if (!ids.length && !rejects.length) { this.toast("Nothing to apply", "warn"); return; }
     const fields = action === "delete" ? { is_deleted: 1 } : { is_owned: 1 };
     try {
-      await api.bulkTracks({ ids, ...fields });
+      if (ids.length) await api.bulkTracks({ ids, ...fields });
+      if (rejects.length) await api.rejectMatches(rejects);
       // Remember the chosen strictness for next time - but only for the whole-library
       // scan; a lenient artist-scoped pass shouldn't lower the global default.
       if (!this.ownedReview.scoped) {
         api.patchSettings({ owned_match_threshold: String(this.ownedReview.threshold) }).catch(() => {});
         this.settings.owned_match_threshold = String(this.ownedReview.threshold);
       }
-      this.toast(action === "delete"
-        ? `Soft-deleted ${ids.length} track(s) you own`
-        : `Tagged ${ids.length} track(s) as owned`);
+      const parts = [];
+      if (ids.length) parts.push(action === "delete" ? `soft-deleted ${ids.length}` : `tagged ${ids.length} as owned`);
+      if (rejects.length) parts.push(`remembered ${rejects.length} as not a match`);
+      this.toast(parts.join(" · ").replace(/^./, (c) => c.toUpperCase()));
       this.ownedReview = null;
       this.loadTracks(); this.loadArtists(); this.loadStats();
     } catch (err) { this.toast(err.message, "err"); }

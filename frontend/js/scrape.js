@@ -42,13 +42,12 @@ window.DJ.scrapeMixin = {
       try { all = await api.listArtists({}); } catch (e) { all = this.artists; }
       const active = all.filter((a) => a.is_active && !a.is_deleted);
       const thr = parseInt(this.settings.priority_update_threshold || 2);
-      // Comma-insensitive (mirror backend norm_commas): collapse spaces around commas.
-      const nc = (s) => (s || "").replace(/\s*,\s*/g, ",");
-      const q = nc((notesQuery || "").trim().toLowerCase());
+      // Word match (mirror backend notes_terms): every word must appear in the notes.
+      const terms = (notesQuery || "").toLowerCase().split(/[,\s]+/).filter(Boolean);
       let n, label;
       if (mode === "full") { n = active.length; label = "all active artists"; }
       else if (mode === "priority") { n = active.filter((a) => a.priority >= thr).length; label = `priority ≥ ${thr}★ artists`; }
-      else { n = active.filter((a) => nc((a.notes || "").toLowerCase()).includes(q)).length; label = `artists with “${notesQuery.trim()}” in notes`; }
+      else { n = active.filter((a) => { const notes = (a.notes || "").toLowerCase(); return terms.every((t) => notes.includes(t)); }).length; label = `artists with “${notesQuery.trim()}” in notes`; }
       if (!n) { this.toast("No matching artists to update", "warn"); return; }
       const mins = Math.max(1, Math.round(n * 9 / 60));
       const ok = await this.uiConfirm(`Update ${n} ${label}? Scraping runs slowly on purpose - a few seconds per artist to stay under SoundCloud's radar - so this can take a while (roughly ${mins} min). You can pause or stop it once it's running.`);

@@ -127,13 +127,14 @@ class ScrapeManager:
             artists = await queries.list_artists(conn)
             chosen = [a for a in artists if a["is_active"] and a["priority"] >= thr]
         elif mode == "notes":
-            # Comma-insensitive match (mirror the sidebar notes search).
-            q = queries.norm_commas((notes_query or "").strip().lower())
+            # Word match: every word in the query must appear in the notes (mirrors
+            # the sidebar notes search).
+            terms = queries.notes_terms(notes_query)
             artists = await queries.list_artists(conn)
             chosen = [
                 a for a in artists
-                if a["is_active"] and q
-                and q in queries.norm_commas((a.get("notes") or "").lower())
+                if a["is_active"] and terms
+                and all(t in (a.get("notes") or "").lower() for t in terms)
             ]
         else:  # selected | single
             chosen = []

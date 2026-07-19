@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "dj-organizer"
-APP_VERSION = "0.1.4.1"
+APP_VERSION = "0.1.4.2"
 
 # owner/repo on GitHub; used for the update check and About links.
 GITHUB_REPO = "JustBaneIsFine/dj-track-organizer"

@@ -11,6 +11,7 @@ import asyncio
 import os
 import subprocess
 import sys
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,6 +33,10 @@ SCAN_PROGRESS: dict[str, int] = {}
 # opened in the default player. Only /open reads it, and /open only accepts names
 # from this map (never a path from the client). Browser-picker scans clear it.
 LAST_SCAN_PATHS: dict[str, str] = {}
+
+# Names from a native /pick, held until the client matches them via /scan-pending.
+# Keeps folder-picking and matching as two steps so the UI can show each separately.
+PENDING_SCANS: dict[str, list[str]] = {}
 
 
 class ScanBody(BaseModel):
@@ -66,6 +71,9 @@ async def _match_against_library(
     for t in candidates:
         t["artist_aliases"] = alias_map.get(t["artist_id"], [])
 
+    # (track, filename) pairs the user said aren't the same song - never re-match them.
+    rejected = await queries.get_owned_rejections(db, [t["id"] for t in candidates])
+
     progress_cb = None
     if token:
         SCAN_PROGRESS[token] = 0
@@ -73,7 +81,7 @@ async def _match_against_library(
             SCAN_PROGRESS[token] = int(100 * done / total) if total else 100
     try:
         matches = await asyncio.to_thread(
-            match.match_filenames, candidates, filenames, floor, progress_cb
+            match.match_filenames, candidates, filenames, floor, progress_cb, rejected
         )
     finally:
         if token:
@@ -102,24 +110,58 @@ async def scan(body: ScanBody, db=Depends(get_db)):
 
 
 @router.post("/pick")
-async def pick(artist_id: Optional[int] = None, floor: Optional[int] = None,
-               token: Optional[str] = None, db=Depends(get_db)):
-    """Open a native OS folder dialog on this machine, list names (read-only),
-    and match them. Primary picker; also remembers name->path so a match can be
-    opened in the default player."""
+async def pick():
+    """Open a native OS folder dialog and list audio names (read-only). Returns a
+    token to match via /scan-pending, so the UI shows 'choosing' and 'matching' as
+    separate steps. Also remembers name->path so a match can be opened in a player."""
     try:
         path = await asyncio.get_event_loop().run_in_executor(None, folder_pick.ask_directory)
-    except Exception as e:  # noqa: BLE001 - e.g. no display / tkinter missing
+    except Exception as e:  # noqa: BLE001 - e.g. no dialog available
         raise HTTPException(500, f"Could not open folder dialog: {e}")
     if not path:
         return {"cancelled": True}
     names, paths = folder_pick.walk_audio_paths(path)
     LAST_SCAN_PATHS.clear()
     LAST_SCAN_PATHS.update(paths)
-    result = await _match_against_library(db, names, floor, artist_id, token)
-    result["cancelled"] = False
+    PENDING_SCANS.clear()
+    pending = uuid.uuid4().hex
+    PENDING_SCANS[pending] = names
+    return {"cancelled": False, "pending": pending, "count": len(names), "has_paths": True}
+
+
+class PendingBody(BaseModel):
+    pending: str
+    floor: Optional[int] = None
+    artist_id: Optional[int] = None
+    token: Optional[str] = None  # progress-poll token (see /progress)
+
+
+@router.post("/scan-pending")
+async def scan_pending(body: PendingBody, db=Depends(get_db)):
+    """Match the names from a native /pick (by its pending token) against the library."""
+    names = PENDING_SCANS.pop(body.pending, None)
+    if names is None:
+        raise HTTPException(404, "Scan expired; please choose the folder again")
+    result = await _match_against_library(db, names, body.floor, body.artist_id, body.token)
     result["has_paths"] = True
     return result
+
+
+class RejectItem(BaseModel):
+    track_id: int
+    filename: str
+
+
+class RejectBody(BaseModel):
+    pairs: list[RejectItem]
+
+
+@router.post("/reject")
+async def reject(body: RejectBody, db=Depends(get_db)):
+    """Remember (track, filename) pairs as 'not the same song', so future scans skip
+    those exact pairs. The track can still match a different file."""
+    n = await queries.add_owned_rejections(db, [(p.track_id, p.filename) for p in body.pairs])
+    return {"rejected": n}
 
 
 class OpenBody(BaseModel):

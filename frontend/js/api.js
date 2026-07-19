@@ -67,16 +67,11 @@ window.api = (() => {
 
     // owned (folder scan)
     scanOwned: (filenames, floor, artist_id, token) => j("/api/owned/scan", { method: "POST", ...body({ filenames, floor, artist_id, token }) }),
-    pickFolderNative: (artist_id, floor, token) => {
-      const p = new URLSearchParams();
-      if (artist_id) p.set("artist_id", artist_id);
-      if (floor != null) p.set("floor", floor);
-      if (token) p.set("token", token);
-      const qs = p.toString();
-      return j("/api/owned/pick" + (qs ? "?" + qs : ""), { method: "POST" });
-    },
+    pickFolderNative: () => j("/api/owned/pick", { method: "POST" }),
+    scanPending: (pending, floor, artist_id, token) => j("/api/owned/scan-pending", { method: "POST", ...body({ pending, floor, artist_id, token }) }),
     ownedProgress: (token) => j("/api/owned/progress?token=" + encodeURIComponent(token)),
     openOwnedFile: (filename) => j("/api/owned/open", { method: "POST", ...body({ filename }) }),
+    rejectMatches: (pairs) => j("/api/owned/reject", { method: "POST", ...body({ pairs }) }),
 
     // sessions
     resumable: () => j("/api/sessions/resumable"),

@@ -195,6 +195,10 @@ def main() -> None:
         height=820,
         min_size=(900, 600),
     )
+    # Let the folder picker use pywebview's dialog (GUI-thread safe) instead of tkinter.
+    import folder_pick  # noqa: WPS433
+    folder_pick.set_webview_window(window)
+
     holder: dict = {}
 
     def _boot_and_swap() -> None:

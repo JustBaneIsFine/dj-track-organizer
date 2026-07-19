@@ -415,7 +415,7 @@
             <div class="prog" style="margin-top:8px"><div :style="`width:${ownedScan.percent||0}%`"></div></div>
             <div class="muted" style="font-size:11px; margin-top:4px"><span x-text="ownedScan.percent||0"></span>%</div>
           </div>
-          <div x-show="ownedScan.phase==='native'">Waiting for you to choose a folder…</div>
+          <div x-show="ownedScan.phase==='native'">Choose your music folder…</div>
           <div class="muted" style="font-size:11px">The app never modifies your files. Only their names are collected and checked.</div>
         </div>
       </div>
@@ -440,7 +440,7 @@
             <label>Match strictness: <b x-text="ownedReview.threshold + '%'"></b></label>
             <input type="range" :min="ownedReview.floor != null ? ownedReview.floor : ownedFloor()" max="100" step="1" x-model.number="ownedReview.threshold" />
           </div>
-          <div class="muted" style="font-size:11px">Tip: click a match to check it on SoundCloud<span x-show="ownedReview.hasPaths">, press ▶ to play your local file,</span> and untick the ones that are not really the same song.</div>
+          <div class="muted" style="font-size:11px">Tip: click a match to check it on SoundCloud<span x-show="ownedReview.hasPaths">, press ▶ to play your local file,</span> and untick the ones that are not really the same song. Unticked matches are remembered and won't be offered again.</div>
           <div class="preview" x-show="ownedDisplayed().length">
             <template x-for="m in ownedDisplayed()" :key="m.track_id">
               <div class="pv" :style="m.url ? 'cursor:pointer' : ''" @click="m.url && window.open(m.url, '_blank')"
@@ -460,8 +460,8 @@
         <div class="foot">
           <button @click="closeOwnedReview()">Cancel</button>
           <span style="flex:1"></span>
-          <button @click="applyOwned('delete')" :disabled="!ownedSelected().length">Soft-delete these</button>
-          <button class="primary" @click="applyOwned('own')" :disabled="!ownedSelected().length">✓ Tag as owned</button>
+          <button @click="applyOwned('delete')" :disabled="!ownedDisplayed().length">Soft-delete these</button>
+          <button class="primary" @click="applyOwned('own')" :disabled="!ownedDisplayed().length">✓ Tag as owned</button>
         </div>
       </div>
     </div>

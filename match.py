@@ -105,13 +105,62 @@ def _candidates(track: dict) -> list[str]:
     return [c for c in out if c]
 
 
+def _best_for_track(t, norm_files, norm_index, sorted_index, floor, exclude):
+    """Best (score, original filename) for one track. ``exclude`` is a set of original
+    filenames to skip (pairs the user rejected); when non-empty the file lists are
+    filtered first, so the common no-rejection case pays nothing."""
+    if exclude:
+        keep = [i for i, (_, orig) in enumerate(norm_files) if orig not in exclude]
+        if not keep:
+            return 0.0, None
+        norm_files = [norm_files[i] for i in keep]
+        norm_index = [norm_index[i] for i in keep]
+        sorted_index = [sorted_index[i] for i in keep]
+
+    best_score = 0.0
+    best_file = None
+    # 1) Strict match: title / "artist - title" / "alias - title" / dedup_key.
+    for cand in _candidates(t):
+        hit = process.extractOne(
+            _token_sort(cand), sorted_index, scorer=fuzz.ratio, score_cutoff=floor
+        )
+        if hit and hit[1] > best_score:
+            best_score = hit[1]
+            best_file = norm_files[hit[2]][1]  # original filename
+
+    # 2) Alias-anywhere: if a file CONTAINS the artist's alias (any position), strip
+    #    the alias and subset-match the remaining title.
+    aliases = [normalize(a) for a in (t.get("artist_aliases") or []) if a]
+    title = normalize(t.get("name") or "")
+    if aliases and title:
+        for alias in aliases:
+            if not alias:
+                continue
+            pat = re.compile(rf"\b{re.escape(alias)}\b")
+            idxs = [i for i, nf in enumerate(norm_index) if pat.search(nf)]
+            if not idxs:
+                continue
+            cleaned = [_strip_alias(norm_index[i], alias) for i in idxs]
+            hit = process.extractOne(
+                title, cleaned, scorer=fuzz.token_set_ratio, score_cutoff=floor
+            )
+            if hit and hit[1] > best_score:
+                best_score = hit[1]
+                best_file = norm_files[idxs[hit[2]]][1]
+    return best_score, best_file
+
+
 def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
-                    progress_cb=None) -> list[dict]:
+                    progress_cb=None, rejected: dict = None) -> list[dict]:
     """Return tracks that fuzzily match some file in the folder, at score >= floor.
 
     For each track we take the best score across its candidate strings vs every
     (normalized) filename, keeping the single best filename. Returns one row per
     matched track: {track_id, track_name, artist_name, filename, score}.
+
+    ``rejected`` (optional) maps track_id -> set of filenames the user said are NOT
+    the same song; those exact (track, file) pairs are never returned, though the
+    track can still match a different file.
 
     ``progress_cb(done, total)`` (optional) is called periodically with the number
     of tracks processed so the caller can show a progress bar. This is CPU-bound;
@@ -134,39 +183,10 @@ def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
     total = len(tracks)
     matches = []
     for ti, t in enumerate(tracks):
-        best_score = 0.0
-        best_file = None
-        # 1) Strict match: title / "artist - title" / "alias - title" / dedup_key.
-        #    Pre-sorted candidate vs pre-sorted files with ratio == token_sort_ratio.
-        for cand in _candidates(t):
-            hit = process.extractOne(
-                _token_sort(cand), sorted_index, scorer=fuzz.ratio, score_cutoff=floor
-            )
-            if hit and hit[1] > best_score:
-                best_score = hit[1]
-                best_file = norm_files[hit[2]][1]  # original filename
-
-        # 2) Alias-anywhere: if a file CONTAINS the artist's alias (any position),
-        #    strip the alias and subset-match the remaining title. Gating on the
-        #    alias being present keeps token_set_ratio's looseness in check.
-        aliases = [normalize(a) for a in (t.get("artist_aliases") or []) if a]
-        title = normalize(t.get("name") or "")
-        if aliases and title:
-            for alias in aliases:
-                if not alias:
-                    continue
-                pat = re.compile(rf"\b{re.escape(alias)}\b")
-                idxs = [i for i, nf in enumerate(norm_index) if pat.search(nf)]
-                if not idxs:
-                    continue
-                cleaned = [_strip_alias(norm_index[i], alias) for i in idxs]
-                hit = process.extractOne(
-                    title, cleaned, scorer=fuzz.token_set_ratio, score_cutoff=floor
-                )
-                if hit and hit[1] > best_score:
-                    best_score = hit[1]
-                    best_file = norm_files[idxs[hit[2]]][1]
-
+        exclude = rejected.get(t["id"]) if rejected else None
+        best_score, best_file = _best_for_track(
+            t, norm_files, norm_index, sorted_index, floor, exclude
+        )
         if best_file is not None:
             matches.append({
                 "track_id": t["id"],
