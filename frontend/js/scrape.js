@@ -88,6 +88,7 @@ window.DJ.scrapeMixin = {
         this.toast(`${ev.skipped_known} already in your library - skipped. ${ev.remaining} new to review.`);
         break;
       case "run_start": r.total = ev.total; break;
+      case "queue_grew": r.total = ev.total; break;
       case "artist_start":
         r.index = ev.index; r.currentName = ev.name; r.captcha = false; r.curCount = 0; r.curPhase = "tracks";
         // A scrape is starting (the background worker, in interactive mode).

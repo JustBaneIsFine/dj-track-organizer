@@ -56,6 +56,7 @@ window.api = (() => {
     // scrape
     startImport: (b) => j("/api/scrape/import", { method: "POST", ...body(b) }),
     startUpdate: (b) => j("/api/scrape/update", { method: "POST", ...body(b) }),
+    enqueueUpdate: (sid, artist_ids) => j("/api/scrape/enqueue/" + sid, { method: "POST", ...body({ artist_ids }) }),
     pause: (sid) => j(`/api/scrape/pause/${sid}`, { method: "POST" }),
     resume: (sid) => j(`/api/scrape/resume/${sid}`, { method: "POST" }),
     skip: (sid) => j(`/api/scrape/skip/${sid}`, { method: "POST" }),

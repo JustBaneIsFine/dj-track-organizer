@@ -57,6 +57,16 @@ async def start_update(body: UpdateBody, db=Depends(get_db)):
     return {"session_id": sid}
 
 
+class EnqueueBody(BaseModel):
+    artist_ids: list[int]
+
+
+@router.post("/enqueue/{sid}")
+async def enqueue(sid: int, body: EnqueueBody, db=Depends(get_db)):
+    """Append artists to a running batch update's queue."""
+    return await manager.enqueue_update(db, sid, body.artist_ids)
+
+
 @router.get("/progress/{sid}")
 async def progress(sid: int):
     job = manager.get(sid)

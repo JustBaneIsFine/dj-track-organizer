@@ -50,6 +50,7 @@ class Job:
     queued_count: int = 0    # artists enqueued for scraping but not yet done
     total_added: int = 0     # new tracks added this run
     errors: list = field(default_factory=list)
+    queue: Optional[list] = None  # live queue ref, so a batch update can be appended to
 
     async def emit(self, event: dict) -> None:
         await self.events.put(event)
@@ -156,6 +157,26 @@ class ScrapeManager:
             self._run(session_id, run_mode=mode, source_url=None)
         )
         return session_id
+
+    async def enqueue_update(
+        self, conn: aiosqlite.Connection, session_id: int, artist_ids: list[int]
+    ) -> dict:
+        """Append artists to a still-running batch update so they scrape in the same
+        queue instead of starting a competing run. Returns {enqueued, active}."""
+        job = self.jobs.get(session_id)
+        if not job or job.interactive or job.queue is None or job.task is None or job.task.done():
+            return {"enqueued": 0, "active": False}
+        n = 0
+        for aid in artist_ids or []:
+            a = await queries.get_artist(conn, aid)
+            if a and not a["is_deleted"]:
+                job.queue.append(
+                    {"url": a["url"], "name": a["name"], "status": "pending", "artist_id": a["id"]}
+                )
+                n += 1
+        if n:
+            await job.emit({"type": "queue_grew", "total": len(job.queue)})
+        return {"enqueued": n, "active": True}
 
     async def relaunch(self, conn: aiosqlite.Connection, session_id: int) -> int:
         """Resume a previously paused session from its persisted current_index."""
@@ -310,6 +331,7 @@ class ScrapeManager:
                             "skipped_known": skipped_known, "remaining": len(queue),
                         })
 
+                job.queue = queue  # expose for live appends (single-artist updates)
                 total = len(queue)
                 await job.emit({"type": "run_start", "total": total, "mode": run_mode})
 
@@ -503,9 +525,11 @@ class ScrapeManager:
 
     async def _batch_loop(self, job, eng, conn, session_id, queue, total, start_index,
                           settings, stop_on_known, stop_after) -> None:
-        """Non-interactive (batch/update) path: review-free, scrape sequentially -
-        unchanged behaviour, just factored out of ``_run``."""
-        for idx in range(start_index, total):
+        """Non-interactive (batch/update) path: review-free, scrape sequentially.
+        Drains the queue by length (not a fixed range) so artists appended while it
+        runs - e.g. clicking "update this artist" on several in a row - get scraped too."""
+        idx = start_index
+        while idx < len(queue):
             if job.control.abandoned.is_set():
                 break
             await job.control.wait_if_paused()
@@ -513,7 +537,9 @@ class ScrapeManager:
                 break
             entry = queue[idx]
             if entry.get("status") in ("done", "skipped"):
+                idx += 1
                 continue
+            total = len(queue)  # grows as artists are appended
             artist = await queries.add_artist(
                 conn, name=entry["name"], url=entry["url"],
             )
@@ -521,7 +547,8 @@ class ScrapeManager:
             await self._scrape_one(job, eng, conn, artist, entry, idx, total,
                                    settings, stop_on_known, stop_after, from_queue=False)
             await self._persist(conn, session_id, queue, idx + 1, job)
-            if idx + 1 < total and not job.control.abandoned.is_set():
+            idx += 1
+            if idx < len(queue) and not job.control.abandoned.is_set():
                 await eng.pace_between_artists()
 
     async def _scrape_one(self, job, eng, conn, artist, entry, idx, total,

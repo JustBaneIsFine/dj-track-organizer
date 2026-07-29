@@ -228,6 +228,8 @@ async def list_artists(
         "added": "a.added_at DESC",
         "last_scraped": "a.last_scraped DESC",
         "new": "(new_count + revisit_count) DESC, a.priority DESC, a.name COLLATE NOCASE ASC",
+        # Highest priority first, and within each priority level the most to do first.
+        "priority_todo": "a.priority DESC, (new_count + revisit_count) DESC, a.name COLLATE NOCASE ASC",
     }.get(sort, "a.priority DESC, a.name COLLATE NOCASE ASC")
 
     # Live counts (cheap counts; fine for thousands of artists locally).

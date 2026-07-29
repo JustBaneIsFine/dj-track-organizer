@@ -94,6 +94,16 @@ window.DJ.artistsMixin = {
     } catch (e) { this.toast(e.message, "err"); }
   },
 
-  // [⟳] update a single artist
-  updateSingleArtist(a) { this.runUpdate("single", [a.id]); },
+  // [⟳] update a single artist. If a background update is already running, add this
+  // artist to its queue instead of starting a competing run (which would cancel it).
+  async updateSingleArtist(a) {
+    const r = this.run;
+    if (r && r.active && r.background && !r.interactive) {
+      try {
+        const res = await api.enqueueUpdate(r.sid, [a.id]);
+        if (res.enqueued) { this.toast(`Queued ${a.name} for update`); return; }
+      } catch (e) { /* fall through to a fresh run */ }
+    }
+    this.runUpdate("single", [a.id]);
+  },
 };

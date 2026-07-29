@@ -56,6 +56,7 @@
         <span class="muted" x-show="run.bgCount" x-text="'· ' + run.bgCount + (run.bgPhase === 'reposts' ? ' reposts' : ' tracks')"></span>
       </span>
       <span class="muted" x-show="run.interactive" x-text="run.processed + ' done · ' + (run.queued||0) + ' queued'"></span>
+      <span class="muted" x-show="!run.interactive && (run.total - run.processed - 1) > 0" x-text="'· ' + (run.total - run.processed - 1) + ' in queue'"></span>
       <span class="spacer"></span>
       <button @click="run.interactive ? stopBgScrape() : stopSaveRun()" title="Stop background scraping - progress saved">⏹ Stop</button>
     </div>
@@ -123,6 +124,7 @@
         <select style="width:100%; margin-top:6px" x-model="artistSort" @change="loadArtists()" title="Sort artists">
           <option value="priority">Sort: Priority</option>
           <option value="priority_old">Sort: Priority + Oldest</option>
+          <option value="priority_todo">Sort: Priority + most to do</option>
           <option value="new">Sort: Most to do</option>
           <option value="name">Sort: Name A-Z</option>
           <option value="last_scraped">Sort: Last updated</option>
