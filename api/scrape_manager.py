@@ -51,6 +51,7 @@ class Job:
     total_added: int = 0     # new tracks added this run
     errors: list = field(default_factory=list)
     queue: Optional[list] = None  # live queue ref, so a batch update can be appended to
+    new_track_ids: list = field(default_factory=list)  # tracks this run added, saved at the end
 
     async def emit(self, event: dict) -> None:
         await self.events.put(event)
@@ -152,6 +153,10 @@ class ScrapeManager:
             conn, mode="batch", source_url=None, queue=queue
         )
         job = Job(session_id=session_id, interactive=False)
+        # Expose the queue immediately (not once the engine has booted) so a second
+        # "update this artist" click a moment later joins this run instead of
+        # starting a competing one.
+        job.queue = queue
         self.jobs[session_id] = job
         job.task = asyncio.create_task(
             self._run(session_id, run_mode=mode, source_url=None)
@@ -164,7 +169,10 @@ class ScrapeManager:
         """Append artists to a still-running batch update so they scrape in the same
         queue instead of starting a competing run. Returns {enqueued, active}."""
         job = self.jobs.get(session_id)
-        if not job or job.interactive or job.queue is None or job.task is None or job.task.done():
+        # task may still be None for a beat right after start_update, so only treat
+        # a *finished* task as "no longer accepting work".
+        if (not job or job.interactive or job.queue is None
+                or (job.task is not None and job.task.done())):
             return {"enqueued": 0, "active": False}
         n = 0
         for aid in artist_ids or []:
@@ -309,7 +317,9 @@ class ScrapeManager:
                     await job.emit({"type": "list_done", "count": len(queue)})
 
                 session = await queries.get_session(conn, session_id)
-                queue = session["artist_queue"]
+                # Prefer the in-memory queue when there is one: artists appended
+                # while the engine was starting up live there, not in the DB copy.
+                queue = job.queue if job.queue is not None else session["artist_queue"]
 
                 # Fresh import only (never on resume - would shift current_index):
                 # drop artists we already have so the user reviews only new ones.
@@ -374,9 +384,23 @@ class ScrapeManager:
             await queries.finish_log(
                 conn, log_id, tracks_added=job.total_added, errors=job.errors
             )
+            # Save what this run found new, as its own entry, so it can be reopened
+            # after the panel closes. Kept to the user's "recent results" count.
+            run_id = None
+            if job.new_track_ids:
+                try:
+                    keep = int(settings.get("saved_runs_keep", 5))
+                except (TypeError, ValueError):
+                    keep = 5
+                run_id = await queries.save_run_result(
+                    conn, session_id=session_id,
+                    label=self._run_label(run_mode, job),
+                    track_ids=job.new_track_ids, keep=keep,
+                )
             await job.emit({
                 "type": "complete", "status": status,
                 "tracks_added": job.total_added, "errors": job.errors,
+                "run_id": run_id, "new_count": len(job.new_track_ids),
             })
         except Exception as e:  # noqa: BLE001
             import traceback
@@ -591,6 +615,7 @@ class ScrapeManager:
         if res.error:
             job.errors.append({"artist": entry["name"], "message": res.error})
         job.total_added += res.tracks_added
+        job.new_track_ids.extend(res.new_track_ids)
         entry["status"] = "done"
         job.processed += 1
         if from_queue:
@@ -602,6 +627,16 @@ class ScrapeManager:
             "tracks_added": res.tracks_added, "error": res.error,
             "queued_remaining": job.queued_count,
         })
+
+    @staticmethod
+    def _run_label(run_mode: str, job) -> str:
+        """Short human label for a saved run result, e.g. 'Update - 3 artists'."""
+        kind = {
+            "import": "Import", "full": "Full update", "priority": "Priority update",
+            "notes": "Notes update", "selected": "Update", "single": "Artist update",
+        }.get(run_mode, "Update")
+        n = job.processed or 0
+        return f"{kind} - {n} artist{'s' if n != 1 else ''}"
 
     async def _persist(self, conn, session_id, queue, next_index, job) -> None:
         await queries.update_session(

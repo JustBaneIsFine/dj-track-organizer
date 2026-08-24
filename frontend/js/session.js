@@ -57,6 +57,7 @@ window.DJ.sessionMixin = {
     this.run = { sid, active: true, interactive: false, background: false, total, processed,
       index: processed, currentName: "Resuming…", added: 0, skipped: 0, paused: false,
       captcha: false, whatsNew: [], errors: [], listCount: 0, curCount: 0, curPhase: "tracks",
+      runId: null, newCount: 0,
       queued: 0, bgName: "", bgCount: 0, bgPhase: "tracks", bgActive: false };
     try {
       await api.resumeSession(sid);

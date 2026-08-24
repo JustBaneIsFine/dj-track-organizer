@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "dj-organizer"
-APP_VERSION = "0.1.4.3"
+APP_VERSION = "0.1.4.4"
 
 # owner/repo on GitHub; used for the update check and About links.
 GITHUB_REPO = "JustBaneIsFine/dj-track-organizer"
@@ -90,5 +90,6 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "show_owned": "false",          # owned tracks hidden by default
     "open_mode": "native",          # how the app window opens: native | browser
     "update_check": "true",         # check GitHub for a newer release on launch
+    "saved_runs_keep": "5",         # how many past run results stay in "Recent results"
     "accepted_disclaimer": "false", # set true once the user accepts the first-run notice
 }

@@ -57,6 +57,32 @@ async def start_update(body: UpdateBody, db=Depends(get_db)):
     return {"session_id": sid}
 
 
+@router.get("/results")
+async def run_results(db=Depends(get_db)):
+    """Recent saved run results (what each run found new), newest first."""
+    return await queries.list_run_results(db, limit=50)
+
+
+class RunTracksBody(BaseModel):
+    remove: Optional[list[int]] = None
+    add: Optional[list[int]] = None
+
+
+@router.post("/results/{run_id}/tracks")
+async def run_result_tracks(run_id: int, body: RunTracksBody, db=Depends(get_db)):
+    """Take dealt-with tracks out of a saved run (or put them back on undo)."""
+    return await queries.update_run_result_tracks(
+        db, run_id, remove=body.remove, add=body.add
+    )
+
+
+@router.delete("/results/{run_id}")
+async def delete_run_result(run_id: int, db=Depends(get_db)):
+    """Retire a saved run (nothing left to review)."""
+    await queries.delete_run_result(db, run_id)
+    return {"deleted": True}
+
+
 class EnqueueBody(BaseModel):
     artist_ids: list[int]
 

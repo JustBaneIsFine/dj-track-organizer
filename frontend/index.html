@@ -69,7 +69,7 @@
            x-model="filters.search" @input="onSearchInput()" />
     <div class="spacer"></div>
     <div style="position:relative">
-      <button @click="showUpdateMenu = !showUpdateMenu">Update ▾</button>
+      <button @click="showUpdateMenu = !showUpdateMenu; if (showUpdateMenu) loadRunResults()">Update ▾</button>
       <div class="ctxmenu" style="right:0; left:auto" x-show="showUpdateMenu" @click.outside="showUpdateMenu=false" x-cloak>
         <button @click="runUpdate('full')">Full update (all active)</button>
         <button @click="runUpdate('priority')">Priority update (≥ <span x-text="settings.priority_update_threshold||2"></span>★)</button>
@@ -83,6 +83,17 @@
         <button @click="openImport(); showUpdateMenu=false">Import new artists…</button>
         <button x-show="resumableExists" x-cloak @click="continueLastImport(); showUpdateMenu=false"
                 title="Resume the last paused step-by-step import where it stopped">▶ Continue last import</button>
+        <div class="section-label" style="padding:6px 8px 2px">Recent results</div>
+        <template x-for="rr in runResults" :key="rr.id">
+          <button @click="showRunTracks({ id: rr.id, label: rr.label || 'Run', count: rr.track_count })"
+                  title="Show the tracks this run found new">
+            ✦ <span x-text="rr.track_count"></span> new ·
+            <span class="muted" x-text="rr.label"></span>
+            <span class="muted" x-text="fmtRunDate(rr.created_at)"></span>
+          </button>
+        </template>
+        <div class="muted" style="padding:4px 8px; font-size:11px" x-show="!runResults.length">
+          No saved results yet. They appear here after an update finds new tracks.</div>
       </div>
     </div>
     <button @click="pickFolder()" :disabled="ownedBusy" title="Check a music folder for tracks you already own">
@@ -188,6 +199,12 @@
             <span class="chip" :class="{on: openDownloadLink}" @click="openDownloadLink=!openDownloadLink"
                   title="When on, clicking a track opens its download link (if it has one) instead of its SoundCloud page."
                   x-text="openDownloadLink ? '⬇ Opens: download link' : '↗ Opens: SoundCloud'"></span>
+          </template>
+          <template x-if="runSet">
+            <span class="chip on" x-cloak @click="clearRunSet()"
+                  title="Showing only what this run found new. Click to clear.">
+              ✦ <span x-text="runSet.label"></span>
+              <span class="chip-count" x-text="runSet.count"></span> ✕</span>
           </template>
         </div>
         <span class="sep"></span>
@@ -599,7 +616,11 @@
               <button class="danger" @click="abandonRun()" title="Discard (not resumable)">Discard</button>
             </div>
           </template>
-          <button x-show="!run.active" class="primary" @click="closeRunPanel()">Done</button>
+          <button x-show="!run.active && run.runId" x-cloak class="primary"
+                  @click="showRunTracks({ id: run.runId, label: 'Last run', count: run.newCount })"
+                  title="Show every track this run found new, from all artists at once">
+            ✦ Show all <span x-text="run.newCount"></span> new tracks</button>
+          <button x-show="!run.active" @click="closeRunPanel()">Done</button>
         </div>
       </div>
     </div>
@@ -693,6 +714,16 @@
           <div class="section-label">Updates</div>
           <div class="field"><label>Priority threshold</label>
             <select x-model="settings.priority_update_threshold"><option value="1">1★</option><option value="2">2★</option><option value="3">3★</option><option value="4">4★</option></select>
+          </div>
+          <div class="field">
+            <label>Keep results of the last</label>
+            <select x-model="settings.saved_runs_keep">
+              <option value="3">3 updates</option>
+              <option value="5">5 updates (recommended)</option>
+              <option value="10">10 updates</option>
+              <option value="15">15 updates</option>
+            </select>
+            <span class="muted" style="font-size:11px">Each update's new tracks stay in the Update menu under "Recent results". Older ones drop off, so the backlog doesn't pile up.</span>
           </div>
 
           <div class="section-label">General</div>

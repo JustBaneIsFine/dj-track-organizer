@@ -53,6 +53,7 @@ window.DJ.scrapeMixin = {
       const ok = await this.uiConfirm(`Update ${n} ${label}? Scraping runs slowly on purpose - a few seconds per artist to stay under SoundCloud's radar - so this can take a while (roughly ${mins} min). You can pause or stop it once it's running.`);
       if (!ok) return;
     }
+    this._startingRun = true;
     try {
       const r = await api.startUpdate({ mode, artist_ids: artistIds || null,
         threshold: mode === "priority" ? parseInt(this.settings.priority_update_threshold || 2) : null,
@@ -63,6 +64,7 @@ window.DJ.scrapeMixin = {
       this._beginRun(r.session_id, false, true);
       this.toast("Updating in the background - see the top strip");
     } catch (e) { this.toast(e.message, "err"); }
+    finally { this._startingRun = false; }
   },
 
   _beginRun(sid, interactive, background = false) {
@@ -70,6 +72,7 @@ window.DJ.scrapeMixin = {
     this._preRunTrackIds = this.tracks.map((t) => t.id);
     this.run = { sid, active: true, total: 0, index: 0, currentName: "", processed: 0,
       skipped: 0, added: 0, paused: false, captcha: false, interactive, background, whatsNew: [], errors: [],
+      runId: null, newCount: 0,
       curCount: 0, curPhase: "tracks", listCount: 0,
       // Interactive imports scrape in the background while you triage: this view
       // tracks the worker independently of the decision card.
@@ -131,7 +134,10 @@ window.DJ.scrapeMixin = {
   async _finishRun(ev) {
     const r = this.run;
     r.active = false; r.status = ev.status;
+    r.runId = ev.run_id || null;      // saved result, so "show all new" survives Done
+    r.newCount = ev.new_count || 0;
     r.bgActive = false; r.bgName = ""; r.queued = 0;  // clear the background strip
+    this.loadRunResults();
     await this.loadArtists(); await this.loadStats(); await this.loadTracks();
     const pre = new Set(this._preRunTrackIds);
     this.newTrackIds = this.tracks.filter((t) => !pre.has(t.id)).map((t) => t.id);

@@ -370,6 +370,7 @@ async def list_tracks(
     is_repost: Optional[int] = None,
     priority_min: Optional[int] = None,
     priority_in: Optional[list[int]] = None,
+    track_ids: Optional[list[int]] = None,
     search: Optional[str] = None,
     sort: str = "priority_new_first",
     merge: bool = False,
@@ -407,6 +408,9 @@ async def list_tracks(
     if priority_in:
         where.append(f"a.priority IN ({','.join('?' * len(priority_in))})")
         params.extend(priority_in)
+    if track_ids:
+        where.append(f"t.id IN ({','.join('?' * len(track_ids))})")
+        params.extend(track_ids)
     if search:
         where.append("(t.name LIKE ? OR a.name LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%"])
@@ -474,6 +478,7 @@ async def count_tracks(
     is_repost: Optional[int] = None,
     priority_min: Optional[int] = None,
     priority_in: Optional[list[int]] = None,
+    track_ids: Optional[list[int]] = None,
     search: Optional[str] = None,
     merge: bool = False,
 ) -> int:
@@ -508,6 +513,9 @@ async def count_tracks(
     if priority_in:
         where.append(f"a.priority IN ({','.join('?' * len(priority_in))})")
         params.extend(priority_in)
+    if track_ids:
+        where.append(f"t.id IN ({','.join('?' * len(track_ids))})")
+        params.extend(track_ids)
     if search:
         where.append("(t.name LIKE ? OR a.name LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%"])
@@ -533,10 +541,11 @@ async def upsert_track(
     is_repost: int = 0,
     purchase_url: Optional[str] = None,
     artist_name: Optional[str] = None,
-) -> bool:
+) -> Optional[int]:
     """Insert if new (by artist_id+url), else just bump last_seen.
 
-    Returns True if a NEW track row was created. Never touches is_checked,
+    Returns the new track's id if a NEW row was created, else None (so callers can
+    both test truthiness and collect what a run added). Never touches is_checked,
     is_deleted or notes on existing rows. ``artist_name`` (optional) is only used
     to compute the cross-platform ``dedup_key``.
     """
@@ -565,15 +574,15 @@ async def upsert_track(
             "purchase_url = COALESCE(?, purchase_url), purchase_checked = 1 WHERE id = ?",
             (ts, name, key, gkey, purchase_url, existing["id"]),
         )
-        return False
+        return None
 
-    await conn.execute(
+    cur = await conn.execute(
         """INSERT INTO tracks (artist_id, name, url, is_repost, added_at, last_seen, dedup_key, group_key,
                                purchase_url, purchase_checked)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
         (artist_id, name, url, is_repost, ts, ts, key, gkey, purchase_url),
     )
-    return True
+    return cur.lastrowid
 
 
 _TRACK_FIELDS = {"is_checked", "is_deleted", "is_owned", "is_revisit", "notes"}
@@ -644,6 +653,87 @@ async def bulk_set_tracks(
     )
     await conn.commit()
     return cur.rowcount
+
+
+# Run results: what one scrape/update run found new, kept so it can be reopened.
+async def save_run_result(
+    conn: aiosqlite.Connection, *, session_id: Optional[int], label: str,
+    track_ids: list[int], keep: int = 5,
+) -> Optional[int]:
+    """Store one run's new-track ids as its own entry (runs are never merged), then
+    prune to the newest ``keep`` results so the list stays short."""
+    ids = [int(i) for i in track_ids if i]
+    if not ids:
+        return None
+    cur = await conn.execute(
+        "INSERT INTO run_results (session_id, created_at, label, track_count, track_ids) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (session_id, now_iso(), label, len(ids), json.dumps(ids)),
+    )
+    new_id = cur.lastrowid
+    if keep and keep > 0:
+        await conn.execute(
+            "DELETE FROM run_results WHERE id NOT IN "
+            "(SELECT id FROM run_results ORDER BY id DESC LIMIT ?)",
+            (keep,),
+        )
+    await conn.commit()
+    return new_id
+
+
+async def list_run_results(conn: aiosqlite.Connection, limit: int = 20) -> list[dict]:
+    """Recent run results, newest first (without the id blob)."""
+    async with conn.execute(
+        "SELECT id, session_id, created_at, label, track_count FROM run_results "
+        "ORDER BY id DESC LIMIT ?", (limit,)
+    ) as cur:
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def delete_run_result(conn: aiosqlite.Connection, run_id: int) -> None:
+    await conn.execute("DELETE FROM run_results WHERE id = ?", (run_id,))
+    await conn.commit()
+
+
+async def update_run_result_tracks(
+    conn: aiosqlite.Connection, run_id: int, *,
+    remove: Optional[list[int]] = None, add: Optional[list[int]] = None,
+) -> dict:
+    """Drop tracks you've dealt with from a saved run (or put them back on undo).
+    The run entry deletes itself once nothing is left. Returns {remaining, deleted}."""
+    run = await get_run_result(conn, run_id)
+    if not run:
+        return {"remaining": 0, "deleted": True}
+    ids = list(run["track_ids"])
+    if remove:
+        drop = {int(i) for i in remove}
+        ids = [i for i in ids if i not in drop]
+    if add:
+        have = set(ids)
+        ids += [int(i) for i in add if int(i) not in have]
+    if not ids:
+        await conn.execute("DELETE FROM run_results WHERE id = ?", (run_id,))
+        await conn.commit()
+        return {"remaining": 0, "deleted": True}
+    await conn.execute(
+        "UPDATE run_results SET track_ids = ?, track_count = ? WHERE id = ?",
+        (json.dumps(ids), len(ids), run_id),
+    )
+    await conn.commit()
+    return {"remaining": len(ids), "deleted": False}
+
+
+async def get_run_result(conn: aiosqlite.Connection, run_id: int) -> Optional[dict]:
+    async with conn.execute("SELECT * FROM run_results WHERE id = ?", (run_id,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return None
+    out = dict(row)
+    try:
+        out["track_ids"] = json.loads(out.get("track_ids") or "[]")
+    except (TypeError, ValueError):
+        out["track_ids"] = []
+    return out
 
 
 # Owned-scan rejections: (track, filename) pairs the user marked "not the same song".

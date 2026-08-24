@@ -97,6 +97,11 @@ window.DJ.artistsMixin = {
   // [⟳] update a single artist. If a background update is already running, add this
   // artist to its queue instead of starting a competing run (which would cancel it).
   async updateSingleArtist(a) {
+    // A run started a moment ago isn't live yet; wait for it so a quick second
+    // click joins that queue instead of starting a run that replaces it.
+    for (let i = 0; i < 100 && this._startingRun; i++) {
+      await new Promise((res) => setTimeout(res, 50));
+    }
     const r = this.run;
     if (r && r.active && r.background && !r.interactive) {
       try {

@@ -54,6 +54,7 @@ async def list_tracks(
     is_repost: Optional[int] = None,
     priority_min: Optional[int] = None,
     priority_in: Optional[str] = Query(None, description="comma-separated exact star levels (0-4)"),
+    run_id: Optional[int] = Query(None, description="show only tracks a saved run found new"),
     search: Optional[str] = None,
     sort: str = "priority_new_first",
     limit: int = 500,
@@ -62,14 +63,21 @@ async def list_tracks(
 ):
     artist_ids = _parse_ids(artist_id)
     stars = _parse_ids(priority_in)  # "0,1,2" → [0,1,2]; level 0 = no stars
+    track_ids = None
+    if run_id:
+        run = await queries.get_run_result(db, run_id)
+        # Unknown/pruned run: an empty set (not "everything"), so the view is honest.
+        track_ids = run["track_ids"] if run else [-1]
     # Merge cross-artist repost duplicates only in the unfiltered (no specific
-    # artist) view; per-artist views keep every row intact.
-    merge = not artist_ids
+    # artist) view; per-artist views keep every row intact. A run view lists the
+    # exact rows it added, so merging would hide some of them.
+    merge = not artist_ids and not track_ids
     items = await queries.list_tracks(
         db, artist_ids=artist_ids, is_checked=is_checked, is_revisit=is_revisit,
         include_deleted=include_deleted, is_deleted=is_deleted,
         include_owned=include_owned, is_owned=is_owned,
         is_repost=is_repost, priority_min=priority_min, priority_in=stars,
+        track_ids=track_ids,
         search=search, sort=sort, merge=merge, limit=limit, offset=offset,
     )
     total = await queries.count_tracks(
@@ -77,6 +85,7 @@ async def list_tracks(
         include_deleted=include_deleted, is_deleted=is_deleted,
         include_owned=include_owned, is_owned=is_owned,
         is_repost=is_repost, priority_min=priority_min, priority_in=stars,
+        track_ids=track_ids,
         search=search, merge=merge,
     )
     return {"items": items, "total": total, "limit": limit, "offset": offset, "merged": merge}

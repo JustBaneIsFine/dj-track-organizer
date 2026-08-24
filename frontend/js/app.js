@@ -210,6 +210,7 @@ function djApp() {
     clearFilters() {
       this.filters = { status: "all", stars: [], type: "all", showDeleted: false, showOwned: false, search: "" };
       this.selectedArtistIds = [];
+      this.runSet = null;           // drop a run-results view too
       this.artistSearch = "";       // also reset the artist sidebar search…
       this.artistUnscraped = false; // …and the unscraped-only toggle
       this.loadArtists();           // refresh the sidebar to match the cleared search
@@ -398,6 +399,15 @@ function djApp() {
     isNew(t) { return this.newTrackIds.includes(t.id); },
     pctListened() { return this.stats.listened_pct || 0; },
     fmtDate(s) { if (!s) return "never"; const d = new Date(s); return d.toLocaleDateString(); },
+    // Runs happen several times a day, so show the time for today's ones.
+    fmtRunDate(s) {
+      if (!s) return "";
+      const d = new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z");
+      if (isNaN(d)) return "";
+      const today = new Date().toDateString() === d.toDateString();
+      return today ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                   : d.toLocaleDateString();
+    },
   };
 
   return Object.assign(

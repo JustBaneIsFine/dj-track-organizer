@@ -64,6 +64,7 @@ class ArtistScrapeResult:
     tracks_found: int = 0
     reposts_found: int = 0
     tracks_added: int = 0
+    new_track_ids: list = field(default_factory=list)
     error: Optional[str] = None
     skipped: bool = False
 
@@ -175,7 +176,8 @@ class ScrapeEngine:
         known_urls=None,
         stop_after: int = 0,
     ) -> ArtistScrapeResult:
-        """Scrape one artist. ``upsert_track`` is an async fn(name,url,is_repost,purchase_url)->bool.
+        """Scrape one artist. ``upsert_track`` is an async fn(name,url,is_repost,purchase_url)
+        returning the new track's id (falsy when the track already existed).
 
         ``on_progress(phase, count)`` (optional, async) is called with a running
         count while scrolling, so the UI can show live progress within an artist.
@@ -207,8 +209,10 @@ class ScrapeEngine:
 
             result.tracks_found = len(tracks)
             for t in tracks:
-                if await upsert_track(t.name, t.url, 0, t.purchase_url):
+                tid = await upsert_track(t.name, t.url, 0, t.purchase_url)
+                if tid:
                     result.tracks_added += 1
+                    result.new_track_ids.append(tid)
 
             if include_reposts:
                 await asyncio.sleep(random.uniform(1.0, 2.5))  # inter-page delay
@@ -221,8 +225,10 @@ class ScrapeEngine:
                 )
                 result.reposts_found = len(reposts)
                 for t in reposts:
-                    if await upsert_track(t.name, t.url, 1, t.purchase_url):
+                    tid = await upsert_track(t.name, t.url, 1, t.purchase_url)
+                    if tid:
                         result.tracks_added += 1
+                        result.new_track_ids.append(tid)
 
             if known_urls and result.tracks_found == 0 and not result.error:
                 result.error = (
