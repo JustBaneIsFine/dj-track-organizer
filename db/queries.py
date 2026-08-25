@@ -257,8 +257,13 @@ async def list_artists(
                   WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_checked = 1) AS listened_count
         FROM artists a
         {where_sql}
-        ORDER BY {order}
     """
+    # The "most to do" sorts are a work queue: artists with nothing left to go
+    # through would just be dead weight at the bottom, so leave them out.
+    if sort in ("new", "priority_todo"):
+        # Aliased "a" so the ORDER BY below still resolves a.priority / a.name.
+        sql = f"SELECT * FROM ({sql}) a WHERE a.new_count + a.revisit_count > 0"
+    sql = f"{sql} ORDER BY {order}"
     async with conn.execute(sql, params) as cur:
         return _artist_rows(await cur.fetchall())
 
@@ -681,46 +686,33 @@ async def save_run_result(
     return new_id
 
 
+# A run's track counts as still to review until it's heard, marked revisit, owned or
+# deleted (or its artist is). Counted live, so a run never reports a stale number
+# regardless of where the track was marked.
+_RUN_PENDING_COUNT = """
+    (SELECT COUNT(*) FROM json_each(r.track_ids) je
+       JOIN tracks t  ON t.id = je.value
+       JOIN artists a ON a.id = t.artist_id
+      WHERE t.is_checked = 0 AND t.is_revisit = 0
+        AND t.is_owned = 0 AND t.is_deleted = 0 AND a.is_deleted = 0)
+"""
+
+
 async def list_run_results(conn: aiosqlite.Connection, limit: int = 20) -> list[dict]:
-    """Recent run results, newest first (without the id blob)."""
+    """Recent run results, newest first, each with its live still-to-review count.
+    Runs with nothing left are omitted (they come back if a track is un-marked)."""
     async with conn.execute(
-        "SELECT id, session_id, created_at, label, track_count FROM run_results "
-        "ORDER BY id DESC LIMIT ?", (limit,)
+        f"SELECT r.id, r.session_id, r.created_at, r.label, "
+        f"{_RUN_PENDING_COUNT} AS track_count "
+        f"FROM run_results r ORDER BY r.id DESC LIMIT ?", (limit,)
     ) as cur:
-        return [dict(r) for r in await cur.fetchall()]
+        rows = [dict(r) for r in await cur.fetchall()]
+    return [r for r in rows if r["track_count"] > 0]
 
 
 async def delete_run_result(conn: aiosqlite.Connection, run_id: int) -> None:
     await conn.execute("DELETE FROM run_results WHERE id = ?", (run_id,))
     await conn.commit()
-
-
-async def update_run_result_tracks(
-    conn: aiosqlite.Connection, run_id: int, *,
-    remove: Optional[list[int]] = None, add: Optional[list[int]] = None,
-) -> dict:
-    """Drop tracks you've dealt with from a saved run (or put them back on undo).
-    The run entry deletes itself once nothing is left. Returns {remaining, deleted}."""
-    run = await get_run_result(conn, run_id)
-    if not run:
-        return {"remaining": 0, "deleted": True}
-    ids = list(run["track_ids"])
-    if remove:
-        drop = {int(i) for i in remove}
-        ids = [i for i in ids if i not in drop]
-    if add:
-        have = set(ids)
-        ids += [int(i) for i in add if int(i) not in have]
-    if not ids:
-        await conn.execute("DELETE FROM run_results WHERE id = ?", (run_id,))
-        await conn.commit()
-        return {"remaining": 0, "deleted": True}
-    await conn.execute(
-        "UPDATE run_results SET track_ids = ?, track_count = ? WHERE id = ?",
-        (json.dumps(ids), len(ids), run_id),
-    )
-    await conn.commit()
-    return {"remaining": len(ids), "deleted": False}
 
 
 async def get_run_result(conn: aiosqlite.Connection, run_id: int) -> Optional[dict]:

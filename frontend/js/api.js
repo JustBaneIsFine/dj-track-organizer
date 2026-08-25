@@ -58,7 +58,6 @@ window.api = (() => {
     startUpdate: (b) => j("/api/scrape/update", { method: "POST", ...body(b) }),
     enqueueUpdate: (sid, artist_ids) => j("/api/scrape/enqueue/" + sid, { method: "POST", ...body({ artist_ids }) }),
     runResults: () => j("/api/scrape/results"),
-    runResultTracks: (id, b) => j(`/api/scrape/results/${id}/tracks`, { method: "POST", ...body(b) }),
     deleteRunResult: (id) => j(`/api/scrape/results/${id}`, { method: "DELETE" }),
     pause: (sid) => j(`/api/scrape/pause/${sid}`, { method: "POST" }),
     resume: (sid) => j(`/api/scrape/resume/${sid}`, { method: "POST" }),

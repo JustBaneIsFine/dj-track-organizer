@@ -68,6 +68,10 @@ async def list_tracks(
         run = await queries.get_run_result(db, run_id)
         # Unknown/pruned run: an empty set (not "everything"), so the view is honest.
         track_ids = run["track_ids"] if run else [-1]
+        # A run lists only what's still to review. Marking a track heard or revisit
+        # anywhere in the app takes it out of here, so these lists never go stale.
+        is_checked, is_revisit = 0, 0
+        include_owned, is_owned = False, None
     # Merge cross-artist repost duplicates only in the unfiltered (no specific
     # artist) view; per-artist views keep every row intact. A run view lists the
     # exact rows it added, so merging would hide some of them.

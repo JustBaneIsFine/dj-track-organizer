@@ -46,12 +46,9 @@ window.DJ.tracksMixin = {
           is_owned: f.is_owned, is_deleted: f.is_deleted,
         });
         this._applyAffectedArtists(r);
-        // Restoring a track to "not dealt with" puts it back in a run view.
-        if (this.runSet && !f.is_checked && !f.is_owned && !f.is_deleted) {
-          await this._runSetSync(arr.map((s) => s.id), false);
-        }
       }
-      this.loadTracks(); this.loadStats();
+      if (this.runSet) await this._runSetRefresh(); else this.loadTracks();
+      this.loadStats();
       this.toast(`Undone: ${entry.label}`);
     } catch (e) { this.toast(e.message, "err"); }
   },
@@ -113,7 +110,6 @@ window.DJ.tracksMixin = {
     if (this.runSet) {
       this.runSet.count = this.tracksTotal;
       if (!this.tracksTotal) {
-        try { await api.deleteRunResult(this.runSet.id); } catch (e) {}
         this.runSet = null;
         this.toast("That run has nothing left to review");
         this.loadRunResults();
@@ -124,38 +120,19 @@ window.DJ.tracksMixin = {
   },
   clearRunSet() { this.runSet = null; this.loadTracks(); },
 
-  // While viewing a run's results, a track you deal with (listened / owned / deleted)
-  // drops out of the list; undoing puts it back. When the last one goes, the run
-  // itself is done and disappears from Recent results.
-  async _runSetSync(ids, done) {
-    if (!this.runSet || !ids || !ids.length) return;
-    const runId = this.runSet.id;
-    try {
-      const r = await api.runResultTracks(runId, done ? { remove: ids } : { add: ids });
-      if (r.deleted) {
-        this.runSet = null;
-        this.toast("That run is all caught up");
-        this.loadRunResults();
-        await this.loadTracks();
-        return;
-      }
-      if (this.runSet) this.runSet.count = r.remaining;
-      if (done) {
-        const drop = new Set(ids);
-        this.tracks = this.tracks.filter((t) => !drop.has(t.id));
-        // Nothing left to review retires the run, even if it still holds ids that
-        // can no longer be shown (e.g. their artist was deleted).
-        if (!this.tracks.length) {
-          try { await api.deleteRunResult(runId); } catch (e) {}
-          this.runSet = null;
-          this.toast("That run is all caught up");
-          this.loadRunResults();
-          await this.loadTracks();
-        }
-      } else {
-        await this.loadTracks();
-      }
-    } catch (e) { /* the mark itself already succeeded; leave the view as-is */ }
+  // A run view only ever lists what's still to review (the server decides), so any
+  // mark - here or anywhere else in the app - just means "reload". When nothing is
+  // left the run is done and steps aside.
+  async _runSetRefresh() {
+    if (!this.runSet) return;
+    await this.loadTracks();
+    this.runSet.count = this.tracksTotal;
+    if (!this.tracksTotal) {
+      this.runSet = null;
+      this.toast("That run is all caught up");
+      this.loadRunResults();
+      await this.loadTracks();
+    }
   },
 
   async loadRunResults() {
@@ -216,8 +193,8 @@ window.DJ.tracksMixin = {
     if (nv) t.is_revisit = 0; // listened & revisit are mutually exclusive (mirror backend)
     try { const r = await api.patchTrack(t.id, { is_checked: nv, group: this._merged() }); this.loadStats(); this._applyAffectedArtists(r); }
     catch (e) { t.is_checked = nv ? 0 : 1; this.toast(e.message, "err"); }
-    await this._runSetSync([t.id], !!nv);
-    if (nv && this.filters.status === "revisit") this.loadTracks();
+    if (this.runSet) await this._runSetRefresh();
+    else if (nv && this.filters.status === "revisit") this.loadTracks();
   },
 
   // Mark/unmark "revisit later" - the one-click sibling of the listened check.
@@ -228,8 +205,9 @@ window.DJ.tracksMixin = {
     if (nv) t.is_checked = 0; // exclusivity (mirror backend)
     try { const r = await api.patchTrack(t.id, { is_revisit: nv, group: this._merged() }); this.loadStats(); this._applyAffectedArtists(r); }
     catch (e) { t.is_revisit = nv ? 0 : 1; this.toast(e.message, "err"); }
+    if (this.runSet) await this._runSetRefresh();  // revisit counts as reviewed
     // A newly-revisited track leaves the New/Listened views.
-    if (nv && (this.filters.status === "new" || this.filters.status === "listened")) this.loadTracks();
+    else if (nv && (this.filters.status === "new" || this.filters.status === "listened")) this.loadTracks();
   },
 
   async toggleOwned(t) {
@@ -239,9 +217,9 @@ window.DJ.tracksMixin = {
     if (nv) t.is_checked = 1; // owned ⇒ listened (mirror backend)
     try { const r = await api.patchTrack(t.id, { is_owned: nv, group: this._merged() }); this.loadStats(); this._applyAffectedArtists(r); }
     catch (e) { t.is_owned = nv ? 0 : 1; this.toast(e.message, "err"); }
-    await this._runSetSync([t.id], !!nv);  // owned counts as dealt with
+    if (this.runSet) await this._runSetRefresh();  // owned counts as reviewed
     // If we're not showing owned, a newly-owned track should drop out of view.
-    if (nv && !this.filters.showOwned && !this.runSet) this.loadTracks();
+    else if (nv && !this.filters.showOwned) this.loadTracks();
   },
 
   async deleteTrack(t) {
@@ -250,8 +228,7 @@ window.DJ.tracksMixin = {
       const r = await api.patchTrack(t.id, { is_deleted: 1, group: this._merged() });
       this.toast("Track deleted (restorable)");
       this.loadStats(); this._applyAffectedArtists(r);
-      await this._runSetSync([t.id], true);
-      if (!this.runSet) this.loadTracks();
+      if (this.runSet) await this._runSetRefresh(); else this.loadTracks();
     } catch (e) { this.toast(e.message, "err"); }
   },
   async restoreTrack(t) {
@@ -259,8 +236,7 @@ window.DJ.tracksMixin = {
     try {
       const r = await api.patchTrack(t.id, { is_deleted: 0, group: this._merged() });
       this._applyAffectedArtists(r);
-      await this._runSetSync([t.id], false);
-      if (!this.runSet) this.loadTracks();
+      if (this.runSet) await this._runSetRefresh(); else this.loadTracks();
     } catch (e) { this.toast(e.message, "err"); }
   },
   // SoundCloud wraps external buy/download links in a "gate.sc/?url=..." redirect
@@ -316,11 +292,7 @@ window.DJ.tracksMixin = {
       this.toast(`Updated ${r.updated} track(s)`);
       this.clearSelection();
       this.loadStats(); this._applyAffectedArtists(r);
-      // Dealt-with rows leave a run view; un-marking puts them back.
-      const done = fields.is_checked === 1 || fields.is_owned === 1 || fields.is_deleted === 1;
-      const back = fields.is_checked === 0 || fields.is_deleted === 0;
-      if (this.runSet && (done || back)) await this._runSetSync(ids, done);
-      else this.loadTracks();
+      if (this.runSet) await this._runSetRefresh(); else this.loadTracks();
     } catch (e) { this.toast(e.message, "err"); }
   },
   bulkListened() { this.bulk({ is_checked: 1 }); },
@@ -363,7 +335,8 @@ window.DJ.tracksMixin = {
       this._applyAffectedArtists(r);
     } catch (e) { this.toast(e.message, "err"); return; }
     this.clearSelection();
-    await this.loadTracks(); this.loadStats();
+    if (this.runSet) await this._runSetRefresh(); else await this.loadTracks();
+    this.loadStats();
     // Re-select the left-behind (real download link) tracks so they stand out.
     const leaveIds = new Set(leaveSet.map((t) => t.id));
     this.selectedTrackIds = this.tracks.filter((t) => leaveIds.has(t.id)).map((t) => t.id);

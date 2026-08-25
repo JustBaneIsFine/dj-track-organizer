@@ -203,8 +203,8 @@
           <template x-if="runSet">
             <span class="chip on" x-cloak @click="clearRunSet()"
                   title="Showing only what this run found new. Click to clear.">
-              ✦ <span x-text="runSet.label"></span>
-              <span class="chip-count" x-text="runSet.count"></span> ✕</span>
+              ✦ <span x-text="runSet && runSet.label"></span>
+              <span class="chip-count" x-text="runSet && runSet.count"></span> ✕</span>
           </template>
         </div>
         <span class="sep"></span>
