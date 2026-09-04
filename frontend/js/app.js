@@ -12,12 +12,19 @@ function djApp() {
     sort: "priority_new_first",
     density: "comfortable",
     uiScale: 100,
-    trackPageSize: 500,
+    trackPageSize: 100,
     filters: { status: "all", stars: [], type: "all", showDeleted: false, showOwned: false, search: "" },
 
     // ui chrome
     showOnboarding: false,
     showSettings: false,
+    settingsTab: "scraping",
+    settingsTabs: [
+      { key: "scraping", label: "Updating" },
+      { key: "appearance", label: "Appearance" },
+      { key: "general", label: "General" },
+      { key: "data", label: "Data" },
+    ],
     showAbout: false,
     showDisclaimer: false,
     meta: {},
@@ -27,6 +34,7 @@ function djApp() {
     showLog: false,
     confirmBox: null,   // { message, _resolve } - in-app confirm dialog
     logs: [],
+    narrow: false,        // window narrow enough to drop the sidebar (see _watchNarrow)
     ctx: null,            // context menu { x, y, track }
     toasts: [],
     _toastId: 0,
@@ -46,6 +54,7 @@ function djApp() {
         this._checkUpdate();
       } catch (e) { this.toast("Startup error: " + e.message, "err"); }
       this._installKeyboard();
+      this._watchNarrow();
       this._startHeartbeat();
       this.ready = true;
     },
@@ -76,19 +85,20 @@ function djApp() {
     },
 
     theme: "dark",
-    accent: "#00e0c8",
+    accent: "#5fd35f",
     accentListened: "",        // "" = follow accent
     accentRevisit: "#e0b84a",
-    accentPresets: ["#00e0c8", "#7aa2f7", "#e0556a", "#e0b84a", "#9d7cd8", "#5fd35f"],
+    accentPresets: ["#5fd35f", "#00e0c8", "#7aa2f7", "#e0556a", "#e0b84a", "#9d7cd8"],
 
     _applyUiFromSettings() {
       this.sort = this.settings.default_sort || "priority_new_first";
       this.density = this.settings.ui_density || "comfortable";
       this.uiScale = parseInt(this.settings.ui_scale || "100") || 100;
       this._applyUiScale();
-      this.trackPageSize = parseInt(this.settings.track_page_size || "500") || 500;
+      this.trackPageSize = parseInt(this.settings.track_page_size || "100") || 100;
+      this._loadLayout();
       this.theme = this.settings.theme || "dark";
-      this.accent = this.settings.accent_color || "#00e0c8";
+      this.accent = this.settings.accent_color || "#5fd35f";
       this.accentListened = this.settings.accent_listened || "";
       this.accentRevisit = this.settings.accent_revisit || "#e0b84a";
       this._applyTheme();
@@ -100,6 +110,7 @@ function djApp() {
         if (saved.sort) this.sort = saved.sort;
         if (saved.density) this.density = saved.density;
       } catch (e) {}
+      this._dropHiddenFilters();   // saved filters may target hidden controls
     },
 
     _persistUi() {
@@ -126,7 +137,7 @@ function djApp() {
     starActive(n) { return this.filters.stars.includes(n); },
     toggleShowDeleted() { this.filters.showDeleted = !this.filters.showDeleted; this.loadArtists(); this.reload(); },
     setSort(s) { this.sort = s; this.reload(); },
-    setDensity(d) { this.density = d; this._persistUi(); },
+    setDensity(d) { this.density = d; this._persistUi(); this._dropHiddenFilters(); },
     _applyUiScale() { document.documentElement.style.zoom = (this.uiScale || 100) / 100; },
     setUiScale(v) {
       this.uiScale = parseInt(v) || 100;
@@ -137,7 +148,7 @@ function djApp() {
     // Max tracks fetched/rendered per view. Lower = smoother; you reach tracks by
     // filtering (artist/status), so the cap rarely bites. Hard-bounded 100-1000.
     setTrackPageSize(v) {
-      let n = parseInt(v) || 500;
+      let n = parseInt(v) || 100;
       n = Math.max(100, Math.min(1000, n));
       this.trackPageSize = n;
       this.settings.track_page_size = String(n);
@@ -157,7 +168,7 @@ function djApp() {
     },
     _rgba(hex, a) {
       const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
-      if (!m) return `rgba(0,224,200,${a})`;
+      if (!m) return `rgba(95,211,95,${a})`;
       const n = parseInt(m[1], 16);
       return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
     },
@@ -232,9 +243,54 @@ function djApp() {
       }
     },
 
+    // Below 900px the sidebar doesn't fit, so it's hidden and the track list
+    // gets the whole window. Row height is untouched - that stays yours.
+    _watchNarrow() {
+      const mq = window.matchMedia("(max-width: 900px)");
+      const apply = (isNarrow) => {
+        const on = isNarrow && this.settings.narrow_hide_sidebar !== "false";
+        if (on === this.narrow) return;
+        this.narrow = on;
+        if (on) this._askNarrowPref();
+      };
+      mq.addEventListener("change", (e) => apply(e.matches));
+      // Some embedded webviews don't fire the media-query change event, so
+      // watch plain resizes too (apply() ignores no-op calls).
+      window.addEventListener("resize", () => apply(mq.matches));
+      apply(mq.matches);
+    },
+    async _askNarrowPref() {
+      if (this.settings.narrow_prompt_seen === "true") return;
+      this.settings.narrow_prompt_seen = "true";
+      api.patchSettings({ narrow_prompt_seen: "true" });
+      const keep = await this.uiConfirm(
+        "The window is too narrow for the sidebar, so it's hidden and the track list "
+        + "has the whole window. Keep hiding it when the window is this small? "
+        + "You can change this later in Settings.",
+        "Keep hiding it", "Always show it");
+      if (!keep) {
+        this.settings.narrow_hide_sidebar = "false";
+        api.patchSettings({ narrow_hide_sidebar: "false" });
+        this.narrow = false;
+      }
+    },
+    applyNarrowSetting() {
+      const v = this.settings.narrow_hide_sidebar === "false" ? "false" : "true";
+      api.patchSettings({ narrow_hide_sidebar: v }).catch(() => {});
+      this.narrow = v !== "false" && window.matchMedia("(max-width: 900px)").matches;
+    },
+    artistCrumbLabel() {
+      const ids = this.selectedArtistIds;
+      if (ids.length > 1) return ids.length + " artists";
+      const a = this.artists.find((x) => x.id === ids[0]);
+      return a ? a.name : "1 artist";
+    },
+
     // in-app confirm (replaces native confirm so no "127.0.0.1 says")
-    uiConfirm(message) {
-      return new Promise((resolve) => { this.confirmBox = { message, _resolve: resolve }; });
+    uiConfirm(message, yesLabel, noLabel) {
+      return new Promise((resolve) => {
+        this.confirmBox = { message, yesLabel, noLabel, _resolve: resolve };
+      });
     },
     _confirmYes() { const b = this.confirmBox; this.confirmBox = null; b && b._resolve(true); },
     _confirmNo() { const b = this.confirmBox; this.confirmBox = null; b && b._resolve(false); },
@@ -273,6 +329,7 @@ function djApp() {
           this.updateAvailable = {
             version: latest,
             notes: this._cleanNotes(rel.body || ""),
+            notesHtml: this._notesHtml(this._cleanNotes(rel.body || "")),
             page: rel.html_url || this.meta.releases_url,
             download: this.meta.download_url || rel.html_url || this.meta.releases_url,
           };
@@ -289,10 +346,53 @@ function djApp() {
     },
     // Trim release-notes markdown down to the changelog lines for the banner:
     // drop the version header and the standard "100% local…" footer.
+    // Release notes are markdown on GitHub. Render the small subset worth
+    // having in the banner: headings, bold/italic/code, bullets, rules, links,
+    // and fenced blocks (kept verbatim, so hand-aligned text survives).
+    // Everything is escaped first - the body is remote text, never markup.
+    _notesHtml(body) {
+      const esc = (t) => String(t).replace(/[&<>"]/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      const inline = (t) => esc(t)
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+        .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>")
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a data-u="$2">$1</a>')
+        .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a data-u="$2">$2</a>');
+
+      const out = [];
+      let fence = null;
+      for (const raw of String(body).split(/\r?\n/)) {
+        const line = raw.replace(/\s+$/, "");
+        if (/^\s*```/.test(line)) {
+          if (fence === null) { fence = []; } else { out.push(`<pre>${esc(fence.join("\n"))}</pre>`); fence = null; }
+          continue;
+        }
+        if (fence !== null) { fence.push(raw); continue; }
+        if (/^\s*(-{3,}|={3,}|_{3,})\s*$/.test(line)) { out.push("<hr>"); continue; }
+        const h = /^\s*(#{1,4})\s+(.*)$/.exec(line);
+        if (h) { out.push(`<div class="nh nh${h[1].length}">${inline(h[2])}</div>`); continue; }
+        const li = /^\s*[-*+]\s+(.*)$/.exec(line);
+        if (li) { out.push(`<div class="nli">${inline(li[1])}</div>`); continue; }
+        if (!line.trim()) { out.push('<div class="nbr"></div>'); continue; }
+        out.push(`<div class="np">${inline(line)}</div>`);
+      }
+      if (fence !== null) out.push(`<pre>${esc(fence.join("\n"))}</pre>`);
+      return out.join("");
+    },
+    // Links inside the notes open in the real browser, not the app window.
+    openNoteLink(e) {
+      const a = e.target.closest("a[data-u]");
+      if (!a) return;
+      e.preventDefault();
+      const u = a.getAttribute("data-u") || "";
+      if (/^https?:\/\//i.test(u)) window.open(u, "_blank");
+    },
+
     _cleanNotes(body) {
       return String(body)
         .split(/\r?\n/)
-        .filter((l) => !/^\s*#/.test(l) && !/^\s*100% local/i.test(l))
+        .filter((l) => !/^\s*100% local/i.test(l))
         .join("\n")
         .trim();
     },
@@ -416,7 +516,8 @@ function djApp() {
     window.DJ.artistsMixin,
     window.DJ.scrapeMixin,
     window.DJ.sessionMixin,
-    window.DJ.ownedMixin
+    window.DJ.ownedMixin,
+    window.DJ.layoutMixin
   );
 }
 window.djApp = djApp;

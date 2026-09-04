@@ -11,11 +11,12 @@
   <script src="/static/js/scrape.js"></script>
   <script src="/static/js/session.js"></script>
   <script src="/static/js/owned.js"></script>
+  <script src="/static/js/layout.js"></script>
   <script src="/static/js/app.js"></script>
   <script defer src="/static/js/alpine.min.js"></script>
 </head>
 <body>
-<div class="app" x-data="djApp()" :class="{ 'density-compact': density === 'compact' }" x-cloak>
+<div class="app" x-data="djApp()" :class="{ 'density-compact': density === 'compact', narrow: narrow }" x-cloak>
 
   <!-- Update-available banner -->
   <template x-if="updateAvailable">
@@ -28,11 +29,12 @@
         <button class="ghost" x-show="updateAvailable.page" @click="window.open(updateAvailable.page, '_blank')">Details ↗</button>
         <button class="ghost" @click="updateAvailable = null">Dismiss</button>
       </div>
-      <div class="update-notes" x-show="updateAvailable.notes" x-text="updateAvailable.notes"></div>
+      <div class="update-notes" x-show="updateAvailable.notes" @click="openNoteLink($event)"
+           x-html="updateAvailable.notesHtml || updateAvailable.notes"></div>
       <div class="update-how">
-        <b>How to update:</b> download the zip, delete your old DJOrganizer folder, then extract the new
-        one in its place. Your library, settings, and login are stored separately in your home folder
-        (<code>.dj-organizer</code>) and stay safe.
+        <b>How to update:</b> download the zip, delete the old DJOrganizer folder, extract the new one
+        in its place. Your library and settings live in <code>.dj-organizer</code> in your home folder,
+        untouched.
       </div>
     </div>
   </template>
@@ -48,17 +50,17 @@
     </div>
   </template>
 
-  <!-- Background scrape strip: interactive imports (card closed) OR a single-artist update -->
+  <!-- Background update strip: interactive imports (card closed) OR a single-artist update -->
   <template x-if="run && run.active && !interactive && (run.background || (run.interactive && (run.bgActive || run.queued)))">
     <div class="banner" x-cloak>
       <span class="spin" style="width:14px;height:14px"></span>
-      <span>Scraping in background: <b x-text="run.bgName || '…'"></b>
+      <span>Updating in background: <b x-text="run.bgName || '…'"></b>
         <span class="muted" x-show="run.bgCount" x-text="'· ' + run.bgCount + (run.bgPhase === 'reposts' ? ' reposts' : ' tracks')"></span>
       </span>
       <span class="muted" x-show="run.interactive" x-text="run.processed + ' done · ' + (run.queued||0) + ' queued'"></span>
       <span class="muted" x-show="!run.interactive && (run.total - run.processed - 1) > 0" x-text="'· ' + (run.total - run.processed - 1) + ' in queue'"></span>
       <span class="spacer"></span>
-      <button @click="run.interactive ? stopBgScrape() : stopSaveRun()" title="Stop background scraping - progress saved">⏹ Stop</button>
+      <button @click="run.interactive ? stopBgScrape() : stopSaveRun()" title="Stop updating. Progress is saved.">⏹ Stop</button>
     </div>
   </template>
 
@@ -101,6 +103,7 @@
     </button>
     <button @click="toggleTheme()" :title="theme==='dark' ? 'Switch to light' : 'Switch to dark'"
             x-text="theme==='dark' ? '☀' : '☾'"></button>
+    <button @click="openLayoutPanel()" title="Customize the compact layout">▤</button>
     <button @click="openAbout()" title="About & links">ⓘ</button>
     <button @click="openSettings()">⚙</button>
   </div>
@@ -109,23 +112,29 @@
     <!-- Sidebar -->
     <div class="sidebar">
       <div class="stats">
-        <div class="big"><b x-text="stats.artists"></b> artists · <b x-text="stats.tracks_total"></b> tracks<span
-              style="float:right; font-weight:600; color:var(--accent, #00e0c8)"
-              title="Tracks you marked listened today (resets at local midnight)">🎧 <span x-text="(stats.listened_today||0).toLocaleString()"></span> today</span></div>
+        <div class="big" x-show="lay('ov.totals') || (lay('ov.today') && density !== 'compact')">
+          <span x-show="lay('ov.totals')"><b x-text="stats.artists"></b> artists · <b x-text="stats.tracks_total"></b> tracks</span><span
+              x-show="lay('ov.today') && density !== 'compact'" style="float:right; font-weight:600; color:var(--accent, #5fd35f)"
+              title="Marked listened today">🎧 <span x-text="(stats.listened_today||0).toLocaleString()"></span> today</span></div>
         <!-- Smart segmented bar: non-zero new/revisit slivers are forced to a min
              width so a tiny amount stays visible among thousands of heard tracks. -->
-        <div class="seg-bar" x-show="stats.tracks_total" :title="`${stats.listened||0} heard · ${stats.new||0} new · ${stats.revisit||0} revisit`">
+        <div class="seg-bar" x-show="stats.tracks_total && lay('ov.bar')" :title="`${stats.listened||0} heard · ${stats.new||0} new · ${stats.revisit||0} revisit`">
           <div class="seg heard" :style="{ flex: stats.listened||0 }"></div>
           <div class="seg new" x-show="stats.new" :style="{ flex: stats.new||0 }"></div>
           <div class="seg rev" x-show="stats.revisit" x-cloak :style="{ flex: stats.revisit||0 }"></div>
         </div>
-        <div class="seg-legend">
-          <span><i class="dot heard"></i><b x-text="(stats.listened||0).toLocaleString()"></b> heard</span>
-          <span x-show="stats.new"><i class="dot new"></i><b x-text="(stats.new||0).toLocaleString()"></b> new</span>
-          <span x-show="stats.revisit" x-cloak><i class="dot rev"></i><b x-text="(stats.revisit||0).toLocaleString()"></b> revisit</span>
+        <div class="seg-legend" x-show="lay('ov.legend') || (lay('ov.today') && density === 'compact')">
+          <span x-show="lay('ov.legend')" title="Heard"><i class="dot heard"></i><b x-text="(stats.listened||0).toLocaleString()"></b><span
+                class="leg-word"> heard</span></span>
+          <span x-show="stats.new && lay('ov.legend')" title="New"><i class="dot new"></i><b x-text="(stats.new||0).toLocaleString()"></b><span
+                class="leg-word"> new</span></span>
+          <span x-show="stats.revisit && lay('ov.legend')" x-cloak title="Revisit"><i class="dot rev"></i><b x-text="(stats.revisit||0).toLocaleString()"></b><span
+                class="leg-word"> revisit</span></span>
+          <span class="leg-today" x-show="lay('ov.today') && density === 'compact'"
+                title="Tracks you marked listened today (resets at local midnight)">🎧 <b x-text="(stats.listened_today||0).toLocaleString()"></b> today</span>
         </div>
-        <div class="muted" style="font-size:11px">orig <span x-text="(stats.originals_listened||0)+'/'+(stats.originals_total||0)"></span> · ↻ <span x-text="(stats.reposts_listened||0)+'/'+(stats.reposts_total||0)"></span></div>
-        <div class="muted"><span x-text="stats.priority_artists"></span> priority · <span x-text="stats.owned||0"></span> owned · last update <span x-text="fmtDate(stats.last_update)"></span></div>
+        <div class="muted" style="font-size:11px" x-show="lay('ov.origreposts')">orig <span x-text="(stats.originals_listened||0)+'/'+(stats.originals_total||0)"></span> · ↻ <span x-text="(stats.reposts_listened||0)+'/'+(stats.reposts_total||0)"></span></div>
+        <div class="muted" x-show="lay('ov.meta')"><span x-text="stats.priority_artists"></span> priority · <span x-text="stats.owned||0"></span> owned · last update <span x-text="fmtDate(stats.last_update)"></span></div>
       </div>
       <div class="sidebar-head">
         <div class="sidebar-title">Artists</div>
@@ -144,13 +153,13 @@
           <button class="mini" :class="{ 'filter-on': selectedArtistIds.length }" @click="clearArtistFilter()" :disabled="!selectedArtistIds.length"
                   x-text="selectedArtistIds.length ? ('Clear filter (' + selectedArtistIds.length + ')') : 'Clear filter'"></button>
           <button class="mini" @click="showAddArtist = !showAddArtist">+ Add artist</button>
-          <button class="mini" x-show="(stats.unscraped_artists || 0) > 0 || artistUnscraped" :class="{ 'filter-on': artistUnscraped }" @click="toggleUnscraped()" title="Show only artists not yet scraped (added but never scraped)" x-cloak>⊘ Unscraped</button>
+          <button class="mini" x-show="(stats.unscraped_artists || 0) > 0 || artistUnscraped" :class="{ 'filter-on': artistUnscraped }" @click="toggleUnscraped()" title="Artists added but never updated" x-cloak>⊘ Never updated</button>
         </div>
         <div x-show="showAddArtist" style="margin-top:7px; display:flex; flex-direction:column; gap:5px;" x-cloak>
           <input type="text" placeholder="soundcloud.com/artist" x-model="addArtistUrl" @keydown.enter="submitAddArtist(false)" />
           <div style="display:flex; gap:5px;">
             <button class="mini" @click="submitAddArtist(false)">Add</button>
-            <button class="mini primary" @click="submitAddArtist(true)">Add & scrape</button>
+            <button class="mini primary" @click="submitAddArtist(true)">Add &amp; update</button>
           </div>
         </div>
       </div>
@@ -160,27 +169,27 @@
                @click="filterByArtist(a, $event.metaKey || $event.ctrlKey)"
                @contextmenu.prevent="openArtistPanel(a)">
             <div class="artist-row1">
-              <span class="stars" :class="'p'+a.priority" @click.stop>
+              <span class="stars" :class="'p'+a.priority" x-show="lay('ar.stars')" @click.stop>
                 <template x-for="i in starsArr" :key="i">
                   <span class="star" :class="{ on: i <= a.priority }" @click="setPriority(a, i)" x-text="'★'"></span>
                 </template>
               </span>
               <span class="artist-name" x-text="a.name"></span>
-              <button class="mini" @click.stop="updateSingleArtist(a)" title="Update this artist">⟳</button>
+              <button class="mini" x-show="lay('ar.update')" @click.stop="updateSingleArtist(a)" title="Update this artist">⟳</button>
             </div>
             <div class="artist-meta">
-              <span x-text="(a.originals_total||0) + ' orig'"></span>
-              <span x-show="a.reposts_total" x-text="a.reposts_total + ' ↻'"></span>
-              <span class="new" x-show="a.new_count" x-text="a.new_count + ' new'"></span>
-              <span class="rv" x-show="a.revisit_count" x-text="a.revisit_count + ' ⟳'"></span>
+              <span x-show="lay('ar.orig')" x-text="(a.originals_total||0) + ' orig'"></span>
+              <span x-show="a.reposts_total && lay('ar.reposts')" x-text="a.reposts_total + ' ↻'"></span>
+              <span class="new" x-show="a.new_count && lay('ar.new')" x-text="a.new_count + ' new'"></span>
+              <span class="rv" x-show="a.revisit_count && lay('ar.revisit')" x-text="a.revisit_count + ' ⟳'"></span>
             </div>
             <!-- Counts (above) are the real signal; this thin bar is just an
                  ambient sense of overall progress. ✓ when nothing's left. -->
-            <div class="heard-bar" x-show="a.tracks_total && (a.new_count || a.revisit_count)"
+            <div class="heard-bar" x-show="a.tracks_total && (a.new_count || a.revisit_count) && lay('ar.bar')"
                  :title="`${a.listened_count||0}/${a.tracks_total||0} heard`">
               <div :style="`width:${segPct(a,'listened_count')}%`"></div>
             </div>
-            <div class="done-check" x-show="a.tracks_total && !a.new_count && !a.revisit_count">✓ all heard</div>
+            <div class="done-check" x-show="a.tracks_total && !a.new_count && !a.revisit_count && lay('ar.done')">✓ all heard</div>
           </div>
         </template>
         <div class="empty" x-show="!artists.length">No artists yet. Import or add one.</div>
@@ -191,39 +200,38 @@
     <div class="tracks-panel" x-show="view==='tracks'">
       <div class="filterbar">
         <div class="chip-group">
-          <span class="chip" :class="{on: filters.status==='all'}" @click="setStatus('all')">All <span class="chip-count" x-text="chipStats.tracks_total||0"></span></span>
-          <span class="chip" :class="{on: filters.status==='new'}" @click="setStatus('new')">New <span class="chip-count" x-text="chipStats.new||0"></span></span>
-          <span class="chip" :class="{on: filters.status==='listened'}" @click="setStatus('listened')">Listened <span class="chip-count" x-text="chipStats.listened||0"></span></span>
-          <span class="chip" :class="{on: filters.status==='revisit'}" @click="setStatus('revisit')">⟳ Revisit <span class="chip-count" x-text="chipStats.revisit||0"></span></span>
-          <template x-if="filters.status==='revisit'">
+          <span class="chip" x-show="lay('filter.all')" :class="{on: filters.status==='all'}" @click="setStatus('all')">All <span class="chip-count" x-text="chipStats.tracks_total||0"></span></span>
+          <span class="chip" x-show="lay('filter.new')" :class="{on: filters.status==='new'}" @click="setStatus('new')">New <span class="chip-count" x-text="chipStats.new||0"></span></span>
+          <span class="chip" x-show="lay('filter.listened')" :class="{on: filters.status==='listened'}" @click="setStatus('listened')">Listened <span class="chip-count" x-text="chipStats.listened||0"></span></span>
+          <span class="chip" x-show="lay('filter.revisit')" :class="{on: filters.status==='revisit'}" @click="setStatus('revisit')">⟳ Revisit <span class="chip-count" x-text="chipStats.revisit||0"></span></span>
+          <template x-if="filters.status==='revisit' && lay('filter.openmode')">
             <span class="chip" :class="{on: openDownloadLink}" @click="openDownloadLink=!openDownloadLink"
-                  title="When on, clicking a track opens its download link (if it has one) instead of its SoundCloud page."
+                  title="Clicking a track opens its download link instead of SoundCloud."
                   x-text="openDownloadLink ? '⬇ Opens: download link' : '↗ Opens: SoundCloud'"></span>
           </template>
-          <template x-if="runSet">
-            <span class="chip on" x-cloak @click="clearRunSet()"
-                  title="Showing only what this run found new. Click to clear.">
-              ✦ <span x-text="runSet && runSet.label"></span>
-              <span class="chip-count" x-text="runSet && runSet.count"></span> ✕</span>
-          </template>
         </div>
-        <span class="sep"></span>
-        <div class="chip-group">
+        <template x-if="narrow && selectedArtistIds.length">
+          <span class="chip on artist-crumb" x-cloak @click="clearArtistFilter()"
+                title="Showing one artist only. Click to clear.">
+            <span x-text="artistCrumbLabel()"></span> ✕</span>
+        </template>
+        <span class="sep" x-show="lay('filter.type')"></span>
+        <div class="chip-group" x-show="lay('filter.type')">
           <span class="chip" :class="{on: filters.type==='all'}" @click="setType('all')">All types</span>
           <span class="chip" :class="{on: filters.type==='originals'}" @click="setType('originals')">Originals <span class="chip-count" x-text="chipStats.originals_total||0"></span></span>
           <span class="chip" :class="{on: filters.type==='reposts'}" @click="setType('reposts')">↻ Reposts <span class="chip-count" x-text="chipStats.reposts_total||0"></span></span>
         </div>
-        <span class="sep"></span>
-        <div class="chip-group">
+        <span class="sep" x-show="lay('filter.stars')"></span>
+        <div class="chip-group" x-show="lay('filter.stars')">
           <span class="chip" :class="{on: starActive(0)}" @click="toggleStar(0)" title="No stars">☆</span>
           <template x-for="n in starsArr" :key="n">
             <span class="chip" :class="{on: starActive(n)}" @click="toggleStar(n)" x-text="n+'★'"></span>
           </template>
         </div>
-        <span class="sep"></span>
-        <span class="chip" :class="{on: filters.showDeleted}" @click="toggleShowDeleted()">Show deleted</span>
-        <span class="chip" :class="{on: filters.showOwned}" @click="toggleShowOwned()">Show owned <span class="chip-count" x-text="chipStats.owned||0"></span></span>
-        <span class="spacer" style="flex:1"></span>
+        <span class="sep" x-show="lay('filter.deleted') || lay('filter.owned')"></span>
+        <span class="chip" x-show="lay('filter.deleted')" :class="{on: filters.showDeleted}" @click="toggleShowDeleted()">Show deleted</span>
+        <span class="chip" x-show="lay('filter.owned')" :class="{on: filters.showOwned}" @click="toggleShowOwned()">Show owned <span class="chip-count" x-text="chipStats.owned||0"></span></span>
+        <div class="filter-right">
         <select x-model="sort" @change="setSort(sort)">
           <option value="priority_new_first">Priority + Newest</option>
           <option value="priority_old_first">Priority + Oldest</option>
@@ -237,6 +245,7 @@
           <option value="comfortable">Comfortable</option>
           <option value="compact">Compact</option>
         </select>
+        </div>
       </div>
 
       <!-- Bulk action bar (always visible: select-all lives here) -->
@@ -248,7 +257,7 @@
           <span style="display:flex; gap:8px; align-items:center;">
             <button class="mini" @click="bulkListened()">Mark listened</button>
             <button class="mini" @click="copyNoDownloadSelected()"
-                    title="Copy the SoundCloud links of selected tracks that have no download link (or only a Bandcamp/Beatport one) to the clipboard, one per line, and mark them listened. Tracks with a Hypeddit/PumpYourSound/other download link are left selected for you.">⧉ Copy non-DL & listened</button>
+                    title="Copies the links of selected tracks with no free download (or only Bandcamp/Beatport) and marks them listened. Ones with a real download link stay selected.">⧉ Copy non-DL & listened</button>
             <button class="mini" @click="bulkRevisit()">⟳ Revisit</button>
             <button class="mini" @click="bulkUnlistened()">Mark new</button>
             <button class="mini" @click="bulkDelete()">Delete</button>
@@ -262,6 +271,17 @@
         <span class="spacer" style="flex:1"></span>
         <button class="mini" x-show="undoStack.length" @click="undo()" title="Undo last track change (Ctrl+Z)">↶ Undo</button>
       </div>
+
+      <!-- Run-results view: what one update found new -->
+      <template x-if="runSet">
+        <div class="banner runbanner" x-cloak>
+          <span class="rb-label">✦ Showing <span x-text="runSet && runSet.count"></span> new
+            <span x-text="(runSet && runSet.count) === 1 ? 'track' : 'tracks'"></span>
+            from <span x-text="runSet && runSet.label"></span></span>
+          <span class="spacer"></span>
+          <button @click="clearRunSet()">Exit this view</button>
+        </div>
+      </template>
 
       <!-- Track list -->
       <div class="track-list">
@@ -327,9 +347,9 @@
         <h2>Please confirm</h2>
         <div class="body"><div x-text="confirmBox.message"></div></div>
         <div class="foot">
-          <button @click="_confirmNo()">Cancel</button>
+          <button @click="_confirmNo()" x-text="confirmBox.noLabel || 'Cancel'"></button>
           <span style="flex:1"></span>
-          <button class="primary" @click="_confirmYes()">Continue</button>
+          <button class="primary" @click="_confirmYes()" x-text="confirmBox.yesLabel || 'Continue'"></button>
         </div>
       </div>
     </div>
@@ -341,21 +361,26 @@
       <div class="modal">
         <h2>Welcome to DJ Organizer 🎧</h2>
         <div class="body">
-          <div class="muted">A private, offline home for the tracks you want to work through.
-            Nothing here touches audio files - just names, links, and your listening progress.</div>
-          <div class="section-label">Scraping safely (optional but recommended)</div>
-          <div class="muted" style="font-size:12px">Point the app at your logged-in Chrome profile so SoundCloud
-            sees you as a normal visitor. Leave blank to use a fresh browser you log into on first scrape.</div>
-          <div class="field">
-            <label>Chrome profile path</label>
-            <input type="text" x-model="settings.browser_profile_path" placeholder="optional - e.g. C:\Users\you\AppData\Local\Google\Chrome\User Data" />
-          </div>
+          <div class="muted">Somewhere to keep the tracks you still need to get through. Names, links
+            and what you've heard. It never touches audio files.</div>
+          <div class="muted" style="font-size:12px; margin-top:8px">It reads public SoundCloud pages
+            logged out, so your account stays out of it.</div>
           <div class="field">
             <label>Your SoundCloud following page (optional)</label>
             <input type="text" x-model="settings.source_url" placeholder="https://soundcloud.com/you/following" />
           </div>
+          <div class="section-label">Advanced (optional)</div>
+          <div class="muted" style="font-size:12px">Point this at a Chrome profile to update logged in.
+            Your account is then behind every request, and can be flagged for it. Leave blank if unsure.</div>
+          <div class="field">
+            <label>Chrome profile path</label>
+            <input type="text" x-model="settings.browser_profile_path" placeholder="optional, e.g. C:\Users\you\AppData\Local\Google\Chrome\User Data" />
+          </div>
         </div>
         <div class="foot">
+          <template x-if="meta.tutorial_url">
+            <button @click="window.open(meta.tutorial_url, '_blank')" title="Short video covering the basics">▶ Watch the basics</button>
+          </template>
           <button @click="finishOnboarding(false)">I'll explore first</button>
           <button class="primary" @click="finishOnboarding(true)">Import artists →</button>
         </div>
@@ -370,14 +395,13 @@
         <h2>Before you start</h2>
         <div class="body">
           <div class="muted" style="font-size:13px">
-            DJ Organizer reads <b>public</b> SoundCloud pages through your own browser to collect track
-            <b>names and links</b>. It never downloads, opens, or touches audio files, and everything stays
-            on your computer.
+            It reads <b>public</b> SoundCloud pages through your own browser and collects
+            <b>names and links</b>. No audio is downloaded or touched. Everything stays on your computer.
           </div>
           <ul class="muted" style="font-size:12px; line-height:1.6; margin:10px 0 0 0; padding-left:18px">
             <li>Use it responsibly and respect SoundCloud's Terms of Service.</li>
-            <li>Scraping runs logged-out by default; you are responsible for how you use the app.</li>
-            <li>Provided <b>as is, with no warranty</b> - the author is not liable for your use of it.</li>
+            <li>It runs logged out by default. You are responsible for how you use the app.</li>
+            <li>Provided <b>as is, with no warranty</b>. The author is not liable for your use of it.</li>
             <li>Not affiliated with or endorsed by SoundCloud.</li>
           </ul>
         </div>
@@ -385,6 +409,45 @@
           <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Learn more ↗</button>
           <span style="flex:1"></span>
           <button class="primary" @click="acceptDisclaimer()">I understand</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Compact layout editor -->
+  <template x-if="showLayoutPanel">
+    <div class="overlay" @click.self="showLayoutPanel=false">
+      <div class="modal" style="max-width:620px">
+        <h2>Compact layout</h2>
+        <div class="body">
+          <div class="muted" style="font-size:12px">Click a piece to switch it off or back on. Comfortable
+            always shows everything.</div>
+          <div class="muted" style="font-size:12px" x-show="density !== 'compact'">
+            You're on Comfortable, so nothing here shows yet.
+            <button class="mini" @click="setDensity('compact')">Switch to Compact</button>
+          </div>
+          <template x-for="s in layoutSections()" :key="s.key">
+            <div class="lay-section">
+              <div class="section-label" x-text="s.title"></div>
+              <div class="lay-note" x-text="s.note"></div>
+              <div class="lay-preview">
+                <template x-for="g in s.groups" :key="g.label">
+                  <div class="lay-group">
+                    <span class="lay-group-label" x-show="g.label" x-text="g.label"></span>
+                    <template x-for="it in g.items" :key="it.key">
+                      <span class="lay-item" :class="{ on: lay2(it.key) }" @click="toggleLay(it.key)"
+                            x-text="it.label"></span>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div class="foot">
+          <button @click="resetLayout()">Reset to defaults</button>
+          <span style="flex:1"></span>
+          <button class="primary" @click="showLayoutPanel=false">Done</button>
         </div>
       </div>
     </div>
@@ -398,14 +461,20 @@
         <div class="body">
           <div>Version <b x-text="meta.version || '-'"></b></div>
           <div class="muted" style="font-size:12px; margin-top:4px">
-            A local, offline tool for organizing SoundCloud track names. Stores only names and links -
-            never audio - and keeps everything on your machine.
+            Keeps track of what you've heard on SoundCloud. Names and links only, stored on your
+            machine.
           </div>
           <div class="section-label">Privacy</div>
           <div class="muted" style="font-size:12px">
-            No accounts, no telemetry. The only network calls are to SoundCloud while scraping, plus a
-            once-per-launch version check to GitHub (turn it off in Settings).
+            No accounts, no telemetry. It talks to SoundCloud while updating, and checks GitHub once
+            per launch for a new version (Settings turns that off).
           </div>
+          <template x-if="meta.tutorial_url">
+            <div style="margin-top:14px">
+              <button class="primary" style="width:100%; padding:10px; font-size:14px"
+                      @click="window.open(meta.tutorial_url, '_blank')">▶ Watch the basics</button>
+            </div>
+          </template>
           <div class="section-label">Links</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap">
             <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Source on GitHub ↗</button>
@@ -435,7 +504,6 @@
             <div class="muted" style="font-size:11px; margin-top:4px"><span x-text="ownedScan.percent||0"></span>%</div>
           </div>
           <div x-show="ownedScan.phase==='native'">Choose your music folder…</div>
-          <div class="muted" style="font-size:11px">The app never modifies your files. Only their names are collected and checked.</div>
         </div>
       </div>
     </div>
@@ -454,12 +522,12 @@
             <a href="#" @click.prevent="setAllMatches(true)" style="margin-left:6px">All</a> /
             <a href="#" @click.prevent="setAllMatches(false)">None</a>
           </div>
-          <div class="muted" style="font-size:11px">The app never modifies your files. It only collects names, and plays a file in your default player if you choose to.</div>
+          <div class="muted" style="font-size:11px">Your files are never modified. Names are read, nothing else.</div>
           <div class="field">
             <label>Match strictness: <b x-text="ownedReview.threshold + '%'"></b></label>
             <input type="range" :min="ownedReview.floor != null ? ownedReview.floor : ownedFloor()" max="100" step="1" x-model.number="ownedReview.threshold" />
           </div>
-          <div class="muted" style="font-size:11px">Tip: click a match to check it on SoundCloud<span x-show="ownedReview.hasPaths">, press ▶ to play your local file,</span> and untick the ones that are not really the same song. Unticked matches are remembered and won't be offered again.</div>
+          <div class="muted" style="font-size:11px">Click a match to open it on SoundCloud<span x-show="ownedReview.hasPaths">, or ▶ to play your copy</span>. Untick anything that isn't the same song and it won't come back.</div>
           <div class="preview" x-show="ownedDisplayed().length">
             <template x-for="m in ownedDisplayed()" :key="m.track_id">
               <div class="pv" :style="m.url ? 'cursor:pointer' : ''" @click="m.url && window.open(m.url, '_blank')"
@@ -498,7 +566,7 @@
           </div>
           <div class="field" x-show="importSourceUrl.trim()">
             <label><input type="checkbox" x-model="importRescan" style="width:auto; margin-right:6px" /> Re-scan follow list for new artists</label>
-            <span class="muted" style="font-size:11px">Off = reuse the last saved list and go straight to reviewing (skips the follow-page scrape).</span>
+            <span class="muted" style="font-size:11px">Off reuses the last saved list, which skips reading the follow page.</span>
           </div>
           <div class="muted" style="text-align:center">- or -</div>
           <div class="field">
@@ -534,7 +602,7 @@
                  x-text="interactive.name" title="Open on SoundCloud"></a>
               <span x-show="!interactive.url" x-text="interactive.name"></span>
             </div>
-            <div class="muted">Set a priority, then add. Skipped artists are never scraped. Click the name to preview on SoundCloud.</div>
+            <div class="muted">Skipped artists are never updated.</div>
           </div>
           <div class="field">
             <label>Priority</label>
@@ -555,18 +623,18 @@
           </div>
           <div class="muted" style="font-size:12px">Keys: 1-4 priority · Enter add · S skip</div>
           <div class="muted" x-show="run.bgActive || run.queued" x-cloak style="font-size:12px">
-            ⟳ Scraping in background: <b x-text="run.bgName"></b>
+            ⟳ Updating in background: <b x-text="run.bgName"></b>
             <span x-show="run.queued" x-text="'· ' + run.queued + ' queued'"></span>
             <span x-show="run.bgCount" x-text="'· ' + run.bgCount + (run.bgPhase === \'reposts\' ? \' reposts\' : \' tracks\')"></span>
           </div>
         </div>
         <div class="foot">
-          <button @click="stopSaveRun()" title="Stop reviewing - queued scrapes finish in the background, the rest resumes later">⏹ Stop &amp; save</button>
+          <button @click="stopSaveRun()" title="Queued artists finish in the background. The rest resumes later.">⏹ Stop &amp; save</button>
           <button class="danger" @click="abandonRun()" title="Discard this import (not resumable)">Discard</button>
           <span style="flex:1"></span>
           <button @click="decideSkip()">Skip</button>
-          <button @click="decideAddOnly()" title="Add to library now - scrape later">+ Add only</button>
-          <button class="primary" @click="decideAdd()">✓ Add &amp; scrape</button>
+          <button @click="decideAddOnly()" title="Add now, update later">+ Add only</button>
+          <button class="primary" @click="decideAdd()">✓ Add &amp; update</button>
         </div>
       </div>
     </div>
@@ -578,7 +646,7 @@
   <template x-if="run && !interactive && !(run.background && run.active) && (!run.interactive || !run.active)">
     <div class="overlay" @click.self="!run.active && closeRunPanel()">
       <div class="modal session-card">
-        <h2 x-text="run.active ? 'Scraping…' : 'Run complete'"></h2>
+        <h2 x-text="run.active ? 'Updating…' : 'Update complete'"></h2>
         <div class="body">
           <div class="prog"><div :style="`width:${run.total ? Math.round(100*run.processed/run.total) : 0}%`"></div></div>
           <div class="muted">
@@ -685,23 +753,32 @@
   <!-- Settings modal -->
   <template x-if="showSettings">
     <div class="overlay" @click.self="showSettings=false">
-      <div class="modal">
+      <div class="modal settings-modal">
         <h2>Settings</h2>
+        <div class="tabbar">
+          <template x-for="t in settingsTabs" :key="t.key">
+            <button class="tab" :class="{ on: settingsTab===t.key }" @click="settingsTab=t.key" x-text="t.label"></button>
+          </template>
+        </div>
         <div class="body">
-          <div class="section-label">Scraping</div>
+
+          <div x-show="settingsTab==='scraping'">
+          <div class="section-label">Source &amp; pacing</div>
           <div class="field"><label>Source URL</label><input type="text" x-model="settings.source_url" /></div>
           <div class="row">
             <div class="field"><label>Delay min (ms)</label><input type="number" x-model="settings.scrape_delay_min_ms" /></div>
             <div class="field"><label>Delay max (ms)</label><input type="number" x-model="settings.scrape_delay_max_ms" /></div>
           </div>
           <div class="field"><label>Scroll pause (ms)</label><input type="number" x-model="settings.scroll_pause_ms" /></div>
+          <div class="section-label">Browser</div>
           <div class="field"><label>Browser mode</label>
-            <select x-model="settings.headless_mode"><option value="false">Headed (recommended)</option><option value="true">Headless</option></select>
+            <select x-model="settings.headless_mode"><option value="true">Headless (recommended)</option><option value="false">Visible browser</option></select>
+            <span class="muted" style="font-size:11px">No browser window. If SoundCloud asks for a check, one opens so you can do it.</span>
           </div>
-          <div class="field"><label>Chrome profile path (logged-in scraping)</label><input type="text" x-model="settings.browser_profile_path" placeholder="optional" /></div>
+          <div class="field"><label>Chrome profile path (logged in)</label><input type="text" x-model="settings.browser_profile_path" placeholder="optional" /></div>
           <div class="field"><label>Stop early on known tracks</label>
-            <select x-model="settings.scrape_stop_on_known"><option value="true">On (recommended)</option><option value="false">Off (always full scrape)</option></select>
-            <span class="muted" style="font-size:11px">When re-scraping, stop once we reach tracks we already have - saves a lot of time.</span>
+            <select x-model="settings.scrape_stop_on_known"><option value="true">On (recommended)</option><option value="false">Off (always check everything)</option></select>
+            <span class="muted" style="font-size:11px">Stops at the first tracks you already have. Much faster.</span>
           </div>
           <div class="field" x-show="settings.scrape_stop_on_known==='true'"><label>Stop after N known in a row</label><input type="number" min="1" x-model="settings.scrape_stop_known_count" /></div>
 
@@ -711,7 +788,8 @@
           </div>
           <div class="field"><label>Default repost limit (0 = no limit)</label><input type="number" x-model="settings.repost_limit_default" /></div>
 
-          <div class="section-label">Updates</div>
+          <div class="section-label">Update runs</div>
+
           <div class="field"><label>Priority threshold</label>
             <select x-model="settings.priority_update_threshold"><option value="1">1★</option><option value="2">2★</option><option value="3">3★</option><option value="4">4★</option></select>
           </div>
@@ -723,49 +801,12 @@
               <option value="10">10 updates</option>
               <option value="15">15 updates</option>
             </select>
-            <span class="muted" style="font-size:11px">Each update's new tracks stay in the Update menu under "Recent results". Older ones drop off, so the backlog doesn't pile up.</span>
+            <span class="muted" style="font-size:11px">Kept under "Recent results" in the Update menu. Older ones drop off.</span>
+          
           </div>
 
-          <div class="section-label">General</div>
-          <div class="field">
-            <label>Open app in</label>
-            <select x-model="settings.open_mode">
-              <option value="native">Native window (recommended)</option>
-              <option value="browser">Browser tab</option>
-            </select>
-            <div class="muted" style="font-size:11px; margin-top:4px">Applies the next time you launch the app.</div>
-          </div>
-          <div class="field">
-            <label>Check for updates on launch</label>
-            <select x-model="settings.update_check">
-              <option value="true">On (recommended)</option>
-              <option value="false">Off</option>
-            </select>
-            <div class="muted" style="font-size:11px; margin-top:4px">Checks GitHub for a newer release. The only network call besides SoundCloud.</div>
-          </div>
-          <div class="field">
-            <label>UI size</label>
-            <select x-model="settings.ui_scale" @change="setUiScale(settings.ui_scale)">
-              <option value="100">100% (normal)</option>
-              <option value="110">110%</option>
-              <option value="125">125%</option>
-              <option value="150">150%</option>
-            </select>
-            <div class="muted" style="font-size:11px; margin-top:4px">Scales the whole interface - text, buttons, everything.</div>
-          </div>
-          <div class="field">
-            <label>Tracks shown per view</label>
-            <select x-model="settings.track_page_size" @change="setTrackPageSize(settings.track_page_size)">
-              <option value="100">100</option>
-              <option value="250">250</option>
-              <option value="500">500 (recommended)</option>
-              <option value="750">750</option>
-              <option value="1000">1000 (max)</option>
-            </select>
-            <div class="muted" style="font-size:11px; margin-top:4px">Lower keeps scrolling buttery smooth. Reach more tracks by filtering (artist / status) - the footer shows how many match.</div>
-          </div>
-
-          <div class="section-label">Appearance</div>
+          <div x-show="settingsTab==='appearance'" x-cloak>
+          <div class="section-label">Theme &amp; colors</div>
           <div class="field">
             <label>Theme</label>
             <div class="row">
@@ -799,18 +840,75 @@
             </div>
           </div>
 
-          <div class="section-label">Data</div>
+          <div class="field">
+            <label>UI size</label>
+            <select x-model="settings.ui_scale" @change="setUiScale(settings.ui_scale)">
+              <option value="100">100% (normal)</option>
+              <option value="110">110%</option>
+              <option value="125">125%</option>
+              <option value="150">150%</option>
+            </select>
+            <div class="muted" style="font-size:11px; margin-top:4px">Scales the whole interface.</div>
+          </div>
+
+            <div class="section-label">Layout</div>
+            <div class="field"><label>Compact layout</label>
+              <button @click="showSettings=false; openLayoutPanel()">Customize what compact shows…</button>
+              <span class="muted" style="font-size:11px">Choose what the compact layout keeps.</span>
+            </div>
+          <div class="field"><label>Narrow window</label>
+            <select x-model="settings.narrow_hide_sidebar" @change="applyNarrowSetting()"><option value="true">Hide the sidebar</option><option value="false">Keep the sidebar</option></select>
+            <span class="muted" style="font-size:11px">Under 900px wide, for sitting next to a browser.</span>
+          </div>
+          <div class="field">
+            <label>Tracks shown per view</label>
+            <select x-model="settings.track_page_size" @change="setTrackPageSize(settings.track_page_size)">
+              <option value="100">100 (recommended)</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+              <option value="750">750</option>
+              <option value="1000">1000 (max)</option>
+            </select>
+            <div class="muted" style="font-size:11px; margin-top:4px">Lower scrolls smoother. Filter by artist or status to reach the rest; the footer counts them.</div>
+          </div>
+          </div>
+
+          <div x-show="settingsTab==='general'" x-cloak>
+
+          <div class="field">
+            <label>Open app in</label>
+            <select x-model="settings.open_mode">
+              <option value="native">Native window (recommended)</option>
+              <option value="browser">Browser tab</option>
+            </select>
+            <div class="muted" style="font-size:11px; margin-top:4px">Applies the next time you launch the app.</div>
+          </div>
+          <div class="field">
+            <label>Check for updates on launch</label>
+            <select x-model="settings.update_check">
+              <option value="true">On (recommended)</option>
+              <option value="false">Off</option>
+            </select>
+            <div class="muted" style="font-size:11px; margin-top:4px">Checks GitHub for a newer release.</div>
+          </div>
+          </div>
+
+          <div x-show="settingsTab==='data'" x-cloak>
+
           <div class="muted" style="font-size:11px">Database: ~/.dj-organizer/dj_organizer.db</div>
           <div class="row">
             <button @click="doExport()">Export JSON</button>
             <button @click="$refs.importFile.click()">Import backup</button>
-            <button @click="openLog()">Scrape log</button>
+            <button @click="openLog()">Update log</button>
           </div>
           <input type="file" accept="application/json" x-ref="importFile" style="display:none" @change="importBackup($event)" />
+          <div class="section-label">Danger zone</div>
           <div class="row">
             <button class="danger" @click="purgeDeleted()">Purge deleted</button>
             <button class="danger" @click="resetAll()">Reset everything</button>
           </div>
+          </div>
+
         </div>
         <div class="foot">
           <button @click="showSettings=false">Close</button>
@@ -820,11 +918,11 @@
     </div>
   </template>
 
-  <!-- Scrape log -->
+  <!-- Update log -->
   <template x-if="showLog">
     <div class="overlay" @click.self="showLog=false">
       <div class="modal">
-        <h2>Scrape log</h2>
+        <h2>Update log</h2>
         <div class="body">
           <template x-for="l in logs" :key="l.id">
             <div class="pv" style="border-bottom:1px solid var(--border); padding:8px 0">

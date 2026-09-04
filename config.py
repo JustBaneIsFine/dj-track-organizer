@@ -11,11 +11,13 @@ import sys
 from pathlib import Path
 
 APP_NAME = "dj-organizer"
-APP_VERSION = "0.1.4.5"
+APP_VERSION = "0.2.0"
 
 # owner/repo on GitHub; used for the update check and About links.
 GITHUB_REPO = "JustBaneIsFine/dj-track-organizer"
 CONTACT_EMAIL = "djtezej@gmail.com"
+# Tutorial video; empty hides the About button until there is one.
+TUTORIAL_URL = "https://youtu.be/3hhMcEI-ye0"
 
 # Preferred port; main.py will fall through to PORT_FALLBACK_MAX if taken.
 PORT = 7331
@@ -64,14 +66,14 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "scrape_delay_max_ms": "7000",
     "scroll_pause_ms": "1200",
     "scroll_step_px": "400",
-    "headless_mode": "false",
+    "headless_mode": "true",
     "browser_profile_path": "",
     "default_sort": "priority_new_first",
     "show_deleted": "false",
     "show_reposts": "true",
     "ui_density": "comfortable",
     "ui_scale": "100",          # UI zoom percent: 100 | 110 | 125 | 150
-    "track_page_size": "500",   # max tracks rendered per view: 100 | 250 | 500 | 750 | 1000
+    "track_page_size": "100",   # max tracks rendered per view: 100 | 250 | 500 | 750 | 1000
     "scrape_stop_on_known": "true",  # stop scraping an artist once we hit known tracks
     "scrape_stop_known_count": "5",  # how many consecutive already-saved tracks before stopping
     "interactive_mode": "true",
@@ -81,13 +83,16 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "include_reposts_default": "false",
     "onboarded": "false",
     "theme": "dark",            # dark | light
-    "accent_color": "#00e0c8",  # any hex; drives --accent (and "new")
+    "accent_color": "#5fd35f",  # any hex; drives --accent (and "new")
     "accent_listened": "",      # listened/originals color; empty = follow --accent
     "accent_revisit": "#e0b84a",  # revisit color (amber); drives --revisit
     "owned_match_threshold": "98",  # default folder-match strictness (%)
     "owned_match_floor": "90",      # lowest selectable strictness (for now)
     "owned_match_floor_artist": "88",  # lower floor for per-artist "Check folder" (small, scoped pool)
     "show_owned": "false",          # owned tracks hidden by default
+    "compact_layout": "",           # JSON: which pieces compact shows (layout panel)
+    "narrow_hide_sidebar": "true",  # hide the sidebar when the window is narrow
+    "narrow_prompt_seen": "false",  # asked once, the first time it happens
     "open_mode": "native",          # how the app window opens: native | browser
     "update_check": "true",         # check GitHub for a newer release on launch
     "saved_runs_keep": "5",         # how many past run results stay in "Recent results"

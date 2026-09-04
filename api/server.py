@@ -30,6 +30,14 @@ async def lifespan(app: FastAPI):
     # (never clobber a value the user has since chosen themselves).
     if str(await queries.get_setting(app.state.db, "owned_match_floor_artist", "88")) == "80":
         await queries.set_settings(app.state.db, {"owned_match_floor_artist": "88"})
+    # Scraping used to default to a visible browser; it's headless now. Move
+    # existing installs over once, and remember we did, so anyone who picks the
+    # visible browser afterwards keeps it.
+    if not str(await queries.get_setting(app.state.db, "headless_default_migrated", "")):
+        updates = {"headless_default_migrated": "1"}
+        if str(await queries.get_setting(app.state.db, "headless_mode", "true")).lower() == "false":
+            updates["headless_mode"] = "true"
+        await queries.set_settings(app.state.db, updates)
     try:
         yield
     finally:

@@ -2,27 +2,25 @@
 
 ![DJ Track Organizer](docs/mainpic.png)
 
-A local, offline desktop app for organizing the tracks you want to work through.
-It collects track **names and links** from SoundCloud artist pages, lets you sort
-them by priority, mark what you've listened to or want to revisit, flag what you
-already own, and keep the list updated. It never downloads or modifies audio files;
-it only collects names and links, and everything stays on your computer.
+A local desktop app for working through the tracks you haven't heard yet. It collects
+**names and links** from SoundCloud artist pages so you can prioritise artists, mark what
+you've heard or want to come back to, and flag what you already own. No audio is
+downloaded or touched, and nothing leaves your computer.
 
-> **Read this first.** This tool reads **public** SoundCloud pages through your own
-> browser to collect names and links only. Please use it responsibly and respect
-> SoundCloud's Terms of Service. It is provided **as is, with no warranty**; you are
-> responsible for how you use it. It is **not affiliated with or endorsed by
-> SoundCloud**. See [Disclaimer](#disclaimer).
+> **Read this first.** This reads **public** SoundCloud pages through your own browser,
+> collecting names and links. Use it responsibly and respect SoundCloud's Terms of
+> Service. Provided **as is, with no warranty** — how you use it is on you. **Not
+> affiliated with or endorsed by SoundCloud.** See [Disclaimer](#disclaimer).
 
 ## Features
 
-- Collect originals and reposts from artist pages, with cross-artist repost merging
-- Priority stars, status tracking (new / listened / revisit), and "owned" flagging
-- "Check folder" matches a local music folder against your library by filename only,
-  with a review step where you can play a match in your default player and untick false hits
-- Capture each track's buy / free-download link and triage by where it points
-- Careful, sequential, anti-bot-aware scraping that runs **logged out by default**
-- Everything local: no account, no telemetry, no data leaves your machine
+- Originals and reposts, with the same repost merged across artists
+- Priority stars and per-track status: new, listened, revisit, owned
+- **Check folder** compares a music folder against your library by filename. You review
+  every match, play it if you're unsure, and untick the wrong ones. They stay unticked.
+- Buy and free-download links captured per track, so you can triage by where they point
+- Scraping is slow, sequential and **logged out by default**
+- No account, no telemetry
 
 ## Install
 
@@ -59,9 +57,9 @@ otherwise falls back to your default browser. Data lives at
 
 ## Updating
 
-Download the new zip, delete your old `DJOrganizer` folder, and extract the new one in
-its place. Your data is stored separately (see below), so it carries over untouched. The
-app also shows an in-app banner when a newer release is available.
+Download the new zip, delete the old `DJOrganizer` folder, extract the new one in its
+place. Your data lives elsewhere and carries over untouched. The app tells you when a
+release is out.
 
 ## Uninstall
 
@@ -78,11 +76,11 @@ stay in `~/.dj-organizer/` and are never uploaded.
 
 ## Scraping notes
 
-Defaults are conservative on purpose: random delays between artists, a headed browser,
-and strictly sequential requests. Scraping runs logged out by default, which keeps it
-unconnected to any account. You can optionally point the app at a logged-in browser
-profile in Settings if a page requires it; if you do, prefer a throwaway account over
-your main one.
+Defaults are deliberately slow: random delays between artists, one request at a time,
+no browser window. Scraping runs logged out, so no account is attached to it. If
+SoundCloud asks for a check, a visible browser opens for you to complete it. You can
+point the app at a logged-in Chrome profile in Settings instead — use a throwaway
+account if you do, not your main one.
 
 ## Feedback
 

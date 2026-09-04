@@ -40,6 +40,7 @@ async def meta():
         "download_url": download_url,
         "platform": plat,
         "contact_email": config.CONTACT_EMAIL,
+        "tutorial_url": getattr(config, "TUTORIAL_URL", ""),
     }
 
 # Module-level shared state: the launcher arms this and runs the watchdog thread.

@@ -85,6 +85,9 @@ class ScrapeEngine:
         self._browser = None
         self._ctx = None
         self.page = None
+        self._profile_dir = ""      # resolved on enter; reused by _relaunch_headed
+        self._ua = ""
+        self._forced_headed = False  # a challenge made us reopen with a window
 
     async def _emit(self, event: dict) -> None:
         if self.on_event:
@@ -92,7 +95,9 @@ class ScrapeEngine:
 
     @property
     def _headless(self) -> bool:
-        return str(self.settings.get("headless_mode", "false")).lower() == "true"
+        if self._forced_headed:
+            return False
+        return str(self.settings.get("headless_mode", "true")).lower() == "true"
 
     @property
     def _profile_path(self) -> str:
@@ -102,12 +107,12 @@ class ScrapeEngine:
         from playwright.async_api import async_playwright
 
         self._pw = await async_playwright().start()
-        ua = random_user_agent()
+        ua = self._ua = random_user_agent()
         # Always use a persistent profile so the SoundCloud login is remembered
         # across runs. Default: an app-managed profile dir; if the user set a
         # browser_profile_path (e.g. their real Chrome profile), use that instead.
         import config
-        profile = self._profile_path or str(config.browser_profile_dir())
+        profile = self._profile_dir = self._profile_path or str(config.browser_profile_dir())
         self._ctx = await self._pw.chromium.launch_persistent_context(
             profile,
             headless=self._headless,
@@ -118,6 +123,32 @@ class ScrapeEngine:
 
         self.page.on("response", self._on_response)
         return self
+
+    async def _relaunch_headed(self) -> None:
+        """Reopen the browser with a visible window, same profile dir so the
+        session carries over. Used when a challenge appears while headless -
+        there'd otherwise be no window for the user to complete it in."""
+        self._forced_headed = True
+        try:
+            if self._ctx:
+                await self._ctx.close()
+        except Exception:
+            pass
+        self._ctx = None
+        self.page = None
+        self._ctx = await self._pw.chromium.launch_persistent_context(
+            self._profile_dir,
+            headless=False,
+            viewport=VIEWPORT,
+            user_agent=self._ua or random_user_agent(),
+        )
+        self.page = self._ctx.pages[0] if self._ctx.pages else await self._ctx.new_page()
+        self.page.on("response", self._on_response)
+        await self._emit({
+            "type": "browser_shown",
+            "message": "SoundCloud asked for a check, so a browser window was opened "
+                       "for you to complete it in.",
+        })
 
     async def __aexit__(self, *exc) -> None:
         try:
@@ -204,8 +235,15 @@ class ScrapeEngine:
             # Only suspect a block/login wall when we got nothing AND a real
             # block signal is present - a successful scrape never trips this.
             if not tracks and await self._check_captcha():
-                await self._handle_captcha()
-                tracks = await platform.scrape_tracks(self.page, artist["url"])
+                if self._headless:
+                    # No window to solve it in - reopen visible and try again.
+                    await self._relaunch_headed()
+                    await self.page.goto(artist["url"], wait_until="domcontentloaded")
+                    if not await self._check_captcha():
+                        tracks = await platform.scrape_tracks(self.page, artist["url"])
+                if not tracks:
+                    await self._handle_captcha()
+                    tracks = await platform.scrape_tracks(self.page, artist["url"])
 
             result.tracks_found = len(tracks)
             for t in tracks:

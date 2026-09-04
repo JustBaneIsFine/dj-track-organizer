@@ -193,7 +193,8 @@ def main() -> None:
         html=_splash_html(),       # paints immediately, no server dependency
         width=1280,
         height=820,
-        min_size=(900, 600),
+        min_size=(460, 560),
+        maximized=True,
     )
     # Let the folder picker use pywebview's dialog (GUI-thread safe) instead of tkinter.
     import folder_pick  # noqa: WPS433

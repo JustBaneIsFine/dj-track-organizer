@@ -124,6 +124,7 @@ window.DJ.scrapeMixin = {
         break;
       case "rate_limited": this.toast(`SoundCloud slowed us down - waiting ${ev.cooldown_s}s`, "warn"); break;
       case "retry": this.toast(`Hiccup, retrying in ${ev.wait_s}s`, "warn"); break;
+      case "browser_shown": this.toast(ev.message, "warn"); break;
       case "captcha": r.captcha = true; this.toast(ev.message, "warn"); break;
       case "complete": this._finishRun(ev); break;
       case "error": this.toast("Run error: " + ev.message, "err"); r.active = false; break;
@@ -165,7 +166,7 @@ window.DJ.scrapeMixin = {
     this.interactive = null;  // close the decision card
     this.resumableExists = true;
     if (this.run.interactive && (this.run.bgActive || this.run.queued)) {
-      this.toast("Triage stopped - finishing the queued scrapes in the background");
+      this.toast("Review stopped. The queued artists finish in the background.");
     } else {
       this.run.active = false;
       this.toast("Saved - resume via Update ▾ → Continue last import");
@@ -177,7 +178,7 @@ window.DJ.scrapeMixin = {
     if (!this.run) return;
     await api.stopBg(this.run.sid);
     this.resumableExists = true;
-    this.toast("Stopping background scraping - remaining artists saved for later");
+    this.toast("Stopping. The remaining artists are saved for later.");
   },
   closeRunPanel() { if (this._es) { this._es.close(); this._es = null; } this.run = null; },
 
