@@ -126,12 +126,7 @@ function djApp() {
 
     // filters / sort / density
     reload() { this.loadTracks(); this._persistUi(); },
-    setStatus(s) {
-      // A run view only lists unreviewed tracks, so Listened/Revisit can't apply inside it.
-      if (s === "listened" || s === "revisit") this.runSet = null;
-      this.filters.status = s;
-      this.reload();
-    },
+    setStatus(s) { this.filters.status = s; this.reload(); },
     setType(t) { this.filters.type = t; this.reload(); },
     // Combinable exact star levels (0 = no stars). Empty set = show all.
     toggleStar(n) {
@@ -231,6 +226,7 @@ function djApp() {
       this.artistUnscraped = false; // …and the unscraped-only toggle
       this.loadArtists();           // refresh the sidebar to match the cleared search
       this.reload();
+      this._refreshChipStats();
     },
 
     // stats
@@ -238,11 +234,15 @@ function djApp() {
       try { this.stats = await api.getStats(); } catch (e) {}
       await this._refreshChipStats();
     },
-    // Chip counts reflect the selected artist(s); fall back to global otherwise.
+    // Chip counts reflect the selected artist(s) and open run; fall back to global otherwise.
     async _refreshChipStats() {
-      if (this.selectedArtistIds && this.selectedArtistIds.length) {
-        try { this.chipStats = await api.getStats(this.selectedArtistIds.join(",")); }
-        catch (e) { this.chipStats = this.stats; }
+      const artists = this.selectedArtistIds && this.selectedArtistIds.length ? this.selectedArtistIds.join(",") : "";
+      const runId = this.runSet && this.runSet.id;
+      const seq = (this._chipSeq = (this._chipSeq || 0) + 1);
+      if (artists || runId) {
+        let s;
+        try { s = await api.getStats(artists, runId); } catch (e) { s = this.stats; }
+        if (seq === this._chipSeq) this.chipStats = s;  // a newer refresh (e.g. leaving a run) wins
       } else {
         this.chipStats = this.stats;
       }

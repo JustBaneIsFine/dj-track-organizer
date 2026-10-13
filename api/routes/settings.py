@@ -36,8 +36,12 @@ def _parse_ids(value):
 
 
 @router.get("/api/stats")
-async def stats(artist_id: str | None = None, db=Depends(get_db)):
-    return await queries.stats(db, artist_ids=_parse_ids(artist_id))
+async def stats(artist_id: str | None = None, run_id: int | None = None, db=Depends(get_db)):
+    track_ids = None
+    if run_id:
+        run = await queries.get_run_result(db, run_id)
+        track_ids = (run["track_ids"] if run else None) or [-1]
+    return await queries.stats(db, artist_ids=_parse_ids(artist_id), track_ids=track_ids)
 
 
 @router.get("/api/export")

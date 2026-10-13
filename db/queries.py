@@ -941,7 +941,10 @@ async def list_logs(conn: aiosqlite.Connection, limit: int = 100) -> list[dict]:
 
 
 # Stats / data management
-async def stats(conn: aiosqlite.Connection, *, artist_ids: Optional[list[int]] = None) -> dict:
+async def stats(
+    conn: aiosqlite.Connection, *, artist_ids: Optional[list[int]] = None,
+    track_ids: Optional[list[int]] = None,
+) -> dict:
     out: dict[str, Any] = {}
     # When scoped to an artist selection, the track buckets reflect only those
     # artists (drives the filter-aware chip counts); artist-level meta stays global.
@@ -949,6 +952,10 @@ async def stats(conn: aiosqlite.Connection, *, artist_ids: Optional[list[int]] =
     if artist_ids:
         art_sql = f" AND artist_id IN ({','.join('?' * len(artist_ids))})"
         art_params = list(artist_ids)
+    # A run's results: only its tracks, and owned ones are left out like in the list.
+    if track_ids:
+        art_sql += " AND is_owned = 0 AND id IN (SELECT value FROM json_each(?))"
+        art_params.append(json.dumps(list(track_ids)))
     # Never count tracks belonging to soft-deleted artists.
     nd = " AND artist_id IN (SELECT id FROM artists WHERE is_deleted = 0)"
     async with conn.execute(

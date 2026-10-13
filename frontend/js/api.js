@@ -21,7 +21,13 @@ window.api = (() => {
     meta: () => j("/api/meta"),
     getSettings: () => j("/api/settings"),
     patchSettings: (updates) => j("/api/settings", { method: "PATCH", ...body({ updates }) }),
-    getStats: (artistId) => j("/api/stats" + (artistId ? "?artist_id=" + encodeURIComponent(artistId) : "")),
+    getStats: (artistId, runId) => {
+      const p = new URLSearchParams();
+      if (artistId) p.set("artist_id", artistId);
+      if (runId) p.set("run_id", runId);
+      const qs = p.toString();
+      return j("/api/stats" + (qs ? "?" + qs : ""));
+    },
     exportAll: () => j("/api/export"),
     importAll: (data) => j("/api/import", { method: "POST", ...body(data) }),
     purgeDeleted: () => j("/api/purge/deleted", { method: "DELETE" }),

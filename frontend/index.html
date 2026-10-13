@@ -197,7 +197,20 @@
     </div>
 
     <!-- Tracks panel -->
-    <div class="tracks-panel" x-show="view==='tracks'">
+    <div class="tracks-panel" :class="{ 'in-run': runSet }" x-show="view==='tracks'">
+      <!-- Run-results view: what one update found new -->
+      <template x-if="runSet">
+        <div class="banner runbanner" x-cloak>
+          <div class="rb-text">
+            <span class="rb-label">✦ Update results: <span x-text="runSet && runSet.count"></span> left to review
+              from <span x-text="runSet && runSet.label"></span></span>
+            <span class="rb-note">Filters apply to what this update found. Closes on its own once everything here is reviewed.</span>
+          </div>
+          <span class="spacer"></span>
+          <button class="rb-exit" @click="clearRunSet()" title="Back to all tracks (Esc)">✕ Exit results</button>
+        </div>
+      </template>
+
       <div class="filterbar">
         <div class="chip-group">
           <span class="chip" x-show="lay('filter.all')" :class="{on: filters.status==='all'}" @click="setStatus('all')">All <span class="chip-count" x-text="chipStats.tracks_total||0"></span></span>
@@ -271,17 +284,6 @@
         <span class="spacer" style="flex:1"></span>
         <button class="mini" x-show="undoStack.length" @click="undo()" title="Undo last track change (Ctrl+Z)">↶ Undo</button>
       </div>
-
-      <!-- Run-results view: what one update found new -->
-      <template x-if="runSet">
-        <div class="banner runbanner" x-cloak>
-          <span class="rb-label">✦ Showing <span x-text="runSet && runSet.count"></span> new
-            <span x-text="(runSet && runSet.count) === 1 ? 'track' : 'tracks'"></span>
-            from <span x-text="runSet && runSet.label"></span></span>
-          <span class="spacer"></span>
-          <button @click="clearRunSet()">Exit this view</button>
-        </div>
-      </template>
 
       <!-- Track list -->
       <div class="track-list">

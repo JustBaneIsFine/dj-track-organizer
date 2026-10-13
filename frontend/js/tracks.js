@@ -92,9 +92,9 @@ window.DJ.tracksMixin = {
   async showRunTracks(rs) {
     this.runSet = rs;
     this.selectedArtistIds = [];
-    // Show everything the run found: leftover filters (owned-only, stars, a search)
+    // Start on what's left to review: leftover filters (owned-only, stars, a search)
     // would silently hide most of it.
-    this.filters.status = "all";
+    this.filters.status = "new";
     this.filters.showOwned = false;
     this.filters.showDeleted = false;
     this.filters.type = "all";
@@ -104,34 +104,43 @@ window.DJ.tracksMixin = {
     this.showUpdateMenu = false;
     if (this.run && !this.run.active) this.closeRunPanel();
     await this.loadTracks();
-    // Filters are cleared above, so this is the true count. Keeps the chip honest
-    // when some of the run's tracks are no longer reachable (deleted artist, etc.)
-    // and retires a run that has nothing left to show.
-    if (this.runSet) {
-      this.runSet.count = this.tracksTotal;
-      if (!this.tracksTotal) {
-        this.runSet = null;
-        this.toast("That run has nothing left to review");
-        this.loadRunResults();
-        await this.loadTracks();
-      }
+    // Retires a run with nothing left to review (all marked, deleted artist, etc.).
+    if (!(await this._runSetPending())) {
+      this._leaveRunSet("That run has nothing left to review");
+      await this.loadTracks();
     }
+    await this._refreshChipStats();
     await this.loadArtists();
   },
-  clearRunSet() { this.runSet = null; this.loadTracks(); },
+  clearRunSet() { this.runSet = null; this.loadTracks(); this._refreshChipStats(); },
 
-  // A run view only ever lists what's still to review (the server decides), so any
-  // mark - here or anywhere else in the app - just means "reload". When nothing is
-  // left the run is done and steps aside.
+  // Unreviewed tracks left in the open run, whatever filter is showing. Also keeps
+  // the banner count current.
+  async _runSetPending() {
+    if (!this.runSet) return 0;
+    try {
+      const s = await api.getStats("", this.runSet.id);
+      if (this.runSet) this.runSet.count = s.new || 0;
+    } catch (e) { return this.runSet.count; }
+    return this.runSet ? this.runSet.count : 0;
+  },
+  _leaveRunSet(msg) {
+    this.runSet = null;
+    this.toast(msg);
+    this.loadRunResults();
+    this._refreshChipStats();
+  },
+
+  // Any mark, here or elsewhere in the app, reloads the run. Once nothing in it is
+  // left to review it closes on its own.
   async _runSetRefresh() {
     if (!this.runSet) return;
     await this.loadTracks();
-    this.runSet.count = this.tracksTotal;
-    if (!this.tracksTotal) {
-      this.runSet = null;
-      this.toast("That run is all caught up");
-      this.loadRunResults();
+    if (!(await this._runSetPending())) {
+      this._leaveRunSet("That run is all caught up");
       await this.loadTracks();
+    } else {
+      await this._refreshChipStats();
     }
   },
 
