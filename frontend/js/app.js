@@ -126,7 +126,12 @@ function djApp() {
 
     // filters / sort / density
     reload() { this.loadTracks(); this._persistUi(); },
-    setStatus(s) { this.filters.status = s; this.reload(); },
+    setStatus(s) {
+      // A run view only lists unreviewed tracks, so Listened/Revisit can't apply inside it.
+      if (s === "listened" || s === "revisit") this.runSet = null;
+      this.filters.status = s;
+      this.reload();
+    },
     setType(t) { this.filters.type = t; this.reload(); },
     // Combinable exact star levels (0 = no stars). Empty set = show all.
     toggleStar(n) {
