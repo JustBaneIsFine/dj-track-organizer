@@ -362,6 +362,15 @@ async def refresh_artist_cache(conn: aiosqlite.Connection, artist_id: int) -> No
 
 
 # Tracks
+# Same rule as linkKind() in frontend/js/tracks.js: a store host means "buy",
+# any other link counts as a free download.
+_BUY_SQL = "(t.purchase_url LIKE '%bandcamp.com%' OR t.purchase_url LIKE '%beatport.com%')"
+LINK_SQL = {
+    "buy": _BUY_SQL,
+    "free": f"(COALESCE(t.purchase_url, '') <> '' AND NOT {_BUY_SQL})",
+}
+
+
 async def list_tracks(
     conn: aiosqlite.Connection,
     *,
@@ -373,6 +382,7 @@ async def list_tracks(
     include_owned: bool = False,
     is_owned: Optional[int] = None,
     is_repost: Optional[int] = None,
+    link: Optional[str] = None,
     priority_min: Optional[int] = None,
     priority_in: Optional[list[int]] = None,
     track_ids: Optional[list[int]] = None,
@@ -407,6 +417,8 @@ async def list_tracks(
     if is_repost is not None:
         where.append("t.is_repost = ?")
         params.append(is_repost)
+    if link in LINK_SQL:
+        where.append(LINK_SQL[link])
     if priority_min is not None:
         where.append("a.priority >= ?")
         params.append(priority_min)
@@ -481,6 +493,7 @@ async def count_tracks(
     include_owned: bool = False,
     is_owned: Optional[int] = None,
     is_repost: Optional[int] = None,
+    link: Optional[str] = None,
     priority_min: Optional[int] = None,
     priority_in: Optional[list[int]] = None,
     track_ids: Optional[list[int]] = None,
@@ -512,6 +525,8 @@ async def count_tracks(
     if is_repost is not None:
         where.append("t.is_repost = ?")
         params.append(is_repost)
+    if link in LINK_SQL:
+        where.append(LINK_SQL[link])
     if priority_min is not None:
         where.append("a.priority >= ?")
         params.append(priority_min)
@@ -971,6 +986,7 @@ async def stats(
         "SELECT COUNT(*) AS n FROM artists WHERE is_deleted = 0 AND last_scraped IS NULL"
     ) as cur:
         out["unscraped_artists"] = (await cur.fetchone())["n"]
+    free, buy = (LINK_SQL[k].replace("t.purchase_url", "purchase_url") for k in ("free", "buy"))
     async with conn.execute(
         f"""SELECT
               COUNT(*) AS total,
@@ -980,7 +996,9 @@ async def stats(
               SUM(CASE WHEN is_repost = 0 THEN 1 ELSE 0 END) AS originals_total,
               SUM(CASE WHEN is_repost = 0 AND is_checked = 1 THEN 1 ELSE 0 END) AS originals_listened,
               SUM(CASE WHEN is_repost = 1 THEN 1 ELSE 0 END) AS reposts_total,
-              SUM(CASE WHEN is_repost = 1 AND is_checked = 1 THEN 1 ELSE 0 END) AS reposts_listened
+              SUM(CASE WHEN is_repost = 1 AND is_checked = 1 THEN 1 ELSE 0 END) AS reposts_listened,
+              SUM(CASE WHEN {free} THEN 1 ELSE 0 END) AS free_total,
+              SUM(CASE WHEN {buy} THEN 1 ELSE 0 END) AS buy_total
            FROM tracks WHERE is_deleted = 0{nd}{art_sql}""",
         art_params,
     ) as cur:
@@ -993,6 +1011,8 @@ async def stats(
     out["originals_listened"] = r["originals_listened"] or 0
     out["reposts_total"] = r["reposts_total"] or 0
     out["reposts_listened"] = r["reposts_listened"] or 0
+    out["free_total"] = r["free_total"] or 0
+    out["buy_total"] = r["buy_total"] or 0
     out["listened_pct"] = round(100 * out["listened"] / out["tracks_total"]) if out["tracks_total"] else 0
     out["originals_pct"] = round(100 * out["originals_listened"] / out["originals_total"]) if out["originals_total"] else 0
     out["reposts_pct"] = round(100 * out["reposts_listened"] / out["reposts_total"]) if out["reposts_total"] else 0

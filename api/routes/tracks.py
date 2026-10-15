@@ -52,6 +52,7 @@ async def list_tracks(
     include_owned: bool = False,
     is_owned: Optional[int] = None,
     is_repost: Optional[int] = None,
+    link: Optional[str] = Query(None, description="free | buy"),
     priority_min: Optional[int] = None,
     priority_in: Optional[str] = Query(None, description="comma-separated exact star levels (0-4)"),
     run_id: Optional[int] = Query(None, description="show only tracks a saved run found new"),
@@ -78,7 +79,7 @@ async def list_tracks(
         db, artist_ids=artist_ids, is_checked=is_checked, is_revisit=is_revisit,
         include_deleted=include_deleted, is_deleted=is_deleted,
         include_owned=include_owned, is_owned=is_owned,
-        is_repost=is_repost, priority_min=priority_min, priority_in=stars,
+        is_repost=is_repost, link=link, priority_min=priority_min, priority_in=stars,
         track_ids=track_ids,
         search=search, sort=sort, merge=merge, limit=limit, offset=offset,
     )
@@ -86,7 +87,7 @@ async def list_tracks(
         db, artist_ids=artist_ids, is_checked=is_checked, is_revisit=is_revisit,
         include_deleted=include_deleted, is_deleted=is_deleted,
         include_owned=include_owned, is_owned=is_owned,
-        is_repost=is_repost, priority_min=priority_min, priority_in=stars,
+        is_repost=is_repost, link=link, priority_min=priority_min, priority_in=stars,
         track_ids=track_ids,
         search=search, merge=merge,
     )

@@ -79,6 +79,7 @@ window.DJ.tracksMixin = {
     if (f.status === "revisit") q.is_revisit = 1;
     if (f.type === "originals") q.is_repost = 0;
     if (f.type === "reposts") q.is_repost = 1;
+    if (f.link === "free" || f.link === "buy") q.link = f.link;
     if (f.stars && f.stars.length) q.priority_in = f.stars.join(",");
     if (f.showDeleted) q.is_deleted = 1;  // show ONLY deleted
     if (f.showOwned) q.is_owned = 1;      // show ONLY owned
@@ -98,6 +99,7 @@ window.DJ.tracksMixin = {
     this.filters.showOwned = false;
     this.filters.showDeleted = false;
     this.filters.type = "all";
+    this.filters.link = "all";
     this.filters.stars = [];
     this.filters.search = "";
     this.view = "tracks";
@@ -315,9 +317,12 @@ window.DJ.tracksMixin = {
   // A track has a "usable download link" if it carries a buy/DL link that is NOT a
   // paid store (Bandcamp / Beatport) - i.e. Hypeddit / PumpYourSound / anything else
   // the user can grab by hand. Paid-store links are treated like "no free download".
-  _hasUsableDl(t) {
-    const u = t.purchase_url || "";
-    return !!u && !/bandcamp\.com|beatport\.com/i.test(u);
+  _hasUsableDl(t) { return this.linkKind(t) === "free"; },
+  // "free" | "buy" | null. Shared by the row pill and the copy button; LINK_SQL in
+  // db/queries.py applies the same rule for the Free / Buy chips.
+  linkKind(t) {
+    if (!t.purchase_url) return null;
+    return /bandcamp\.com|beatport\.com/i.test(t.purchase_url) ? "buy" : "free";
   },
   // Selected revisit workflow: tracks with no buy link OR a Bandcamp buy link can't
   // be free-downloaded, so copy their SoundCloud URLs to the clipboard (one per line,

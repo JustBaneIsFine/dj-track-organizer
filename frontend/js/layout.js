@@ -20,6 +20,9 @@ window.DJ.LAYOUT_SECTIONS = [
       { label: "Type", items: [
         { key: "filter.type", label: "All types / Originals / ↻ Reposts", on: false },
       ] },
+      { label: "Link", items: [
+        { key: "filter.link", label: "↓ Free / ↗ Buy", on: false },
+      ] },
       { label: "Stars", items: [
         { key: "filter.stars", label: "☆ 1★ 2★ 3★ 4★", on: false },
       ] },
@@ -56,6 +59,15 @@ window.DJ.LAYOUT_SECTIONS = [
         { key: "ar.revisit", label: "N ⟳", on: true },
         { key: "ar.bar", label: "Progress bar", on: true },
         { key: "ar.done", label: "✓ all heard", on: true },
+      ] },
+    ],
+  },
+  {
+    key: "track", title: "Track rows",
+    note: "Title, artist and the listened / revisit marks are always shown.",
+    groups: [
+      { label: "", items: [
+        { key: "tr.link", label: "↓ free / ↗ buy pill", on: true },
       ] },
     ],
   },
@@ -101,6 +113,7 @@ window.DJ.layoutMixin = {
       changed = true;
     }
     if (!this.lay("filter.type") && f.type !== "all") { f.type = "all"; changed = true; }
+    if (!this.lay("filter.link") && f.link !== "all") { f.link = "all"; changed = true; }
     if (!this.lay("filter.stars") && f.stars.length) { f.stars = []; changed = true; }
     if (!this.lay("filter.deleted") && f.showDeleted) { f.showDeleted = false; changed = true; }
     if (!this.lay("filter.owned") && f.showOwned) { f.showOwned = false; changed = true; }

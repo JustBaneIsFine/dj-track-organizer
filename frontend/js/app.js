@@ -13,7 +13,7 @@ function djApp() {
     density: "comfortable",
     uiScale: 100,
     trackPageSize: 100,
-    filters: { status: "all", stars: [], type: "all", showDeleted: false, showOwned: false, search: "" },
+    filters: { status: "all", stars: [], type: "all", link: "all", showDeleted: false, showOwned: false, search: "" },
 
     // ui chrome
     showOnboarding: false,
@@ -128,6 +128,7 @@ function djApp() {
     reload() { this.loadTracks(); this._persistUi(); },
     setStatus(s) { this.filters.status = s; this.reload(); },
     setType(t) { this.filters.type = t; this.reload(); },
+    setLink(k) { this.filters.link = this.filters.link === k ? "all" : k; this.reload(); },
     // Combinable exact star levels (0 = no stars). Empty set = show all.
     toggleStar(n) {
       const i = this.filters.stars.indexOf(n);
@@ -219,7 +220,7 @@ function djApp() {
       this.reload();
     },
     clearFilters() {
-      this.filters = { status: "all", stars: [], type: "all", showDeleted: false, showOwned: false, search: "" };
+      this.filters = { status: "all", stars: [], type: "all", link: "all", showDeleted: false, showOwned: false, search: "" };
       this.selectedArtistIds = [];
       this.runSet = null;           // drop a run-results view too
       this.artistSearch = "";       // also reset the artist sidebar search…

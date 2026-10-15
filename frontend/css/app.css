@@ -175,7 +175,8 @@ a { color: var(--accent); text-decoration: none; }
 .track.focused { box-shadow: inset 2px 0 0 var(--accent); background: var(--bg-elev); }
 .track.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .track.selected:hover { background: var(--accent-soft); filter: brightness(1.2); }
-.track.checked .track-name { color: var(--text-faint); text-decoration: line-through; }
+.track.checked .track-name { color: var(--text-faint); }
+.track.checked .tname { text-decoration: line-through; }
 .track.deleted { opacity: .4; }
 .track.isnew { animation: landing 1.6s ease-out; }
 @keyframes landing { 0% { background: rgba(224,184,74,.18); } 100% { background: transparent; } }
@@ -211,7 +212,10 @@ a { color: var(--accent); text-decoration: none; }
   font-family: var(--mono); cursor: pointer; }
 .track-name .tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .track-name .repost-tag, .track-name .owned-badge, .track-name .merged-badge,
-.track-name .revisit-badge, .track-name .ext { flex: none; }
+.track-name .revisit-badge, .track-name .link-badge, .track-name .ext { flex: none; }
+.link-badge { margin-left: 8px; font-size: 10px; border: 1px solid; border-radius: 10px; padding: 1px 6px; vertical-align: middle; font-family: var(--sans); white-space: nowrap; }
+.link-badge.free { color: var(--accent); border-color: var(--accent-dim); }
+.link-badge.buy { color: var(--run); border-color: var(--run); }
 .repost-tag { color: var(--text-faint); font-size: 12px; margin-right: 4px; }
 .owned-badge { margin-left: 8px; font-size: 10px; color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 10px; padding: 1px 6px; vertical-align: middle; font-family: var(--sans); }
 .revisit-badge { margin-left: 8px; font-size: 10px; color: var(--revisit); border: 1px solid var(--revisit); border-radius: 10px; padding: 1px 6px; vertical-align: middle; font-family: var(--sans); }

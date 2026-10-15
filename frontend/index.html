@@ -234,6 +234,11 @@
           <span class="chip" :class="{on: filters.type==='originals'}" @click="setType('originals')">Originals <span class="chip-count" x-text="chipStats.originals_total||0"></span></span>
           <span class="chip" :class="{on: filters.type==='reposts'}" @click="setType('reposts')">↻ Reposts <span class="chip-count" x-text="chipStats.reposts_total||0"></span></span>
         </div>
+        <span class="sep" x-show="lay('filter.link')"></span>
+        <div class="chip-group" x-show="lay('filter.link')">
+          <span class="chip" :class="{on: filters.link==='free'}" @click="setLink('free')" title="Tracks with a free download link. Click again to clear.">↓ Free <span class="chip-count" x-text="chipStats.free_total||0"></span></span>
+          <span class="chip" :class="{on: filters.link==='buy'}" @click="setLink('buy')" title="Tracks that link to Bandcamp or Beatport. Click again to clear.">↗ Buy <span class="chip-count" x-text="chipStats.buy_total||0"></span></span>
+        </div>
         <span class="sep" x-show="lay('filter.stars')"></span>
         <div class="chip-group" x-show="lay('filter.stars')">
           <span class="chip" :class="{on: starActive(0)}" @click="toggleStar(0)" title="No stars">☆</span>
@@ -308,6 +313,8 @@
               <span class="repost-tag" x-show="t.is_repost">↻</span><span class="tname" x-text="t.name"></span>
               <span class="merged-badge" x-show="t.group_size > 1" x-cloak x-text="'shared by ' + t.group_size"></span>
               <span class="revisit-badge" x-show="t.is_revisit" x-cloak>⟳ revisit</span>
+              <span class="link-badge free" x-show="lay('tr.link') && linkKind(t)==='free'" x-cloak title="Has a free download link">↓ free</span>
+              <span class="link-badge buy" x-show="lay('tr.link') && linkKind(t)==='buy'" x-cloak title="Links to a store">↗ buy</span>
               <span class="owned-badge" x-show="t.is_owned" x-cloak>✓ owned</span>
             </span>
             <span class="ext" @click.stop="openTrack(t)" title="Open in browser">↗</span>
