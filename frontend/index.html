@@ -805,6 +805,13 @@
             </select>
             <span class="muted" style="font-size:11px">Kept under "Recent results" in the Update menu. Older ones drop off.</span>
           </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+              <input type="checkbox" :checked="settings.update_chime === 'true'"
+                     @change="settings.update_chime = $event.target.checked ? 'true' : 'false'" />
+              Play a sound when an update finds new tracks
+            </label>
+          </div>
           </div>
 
           <div x-show="settingsTab==='appearance'" x-cloak>

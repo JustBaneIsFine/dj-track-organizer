@@ -95,6 +95,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "narrow_prompt_seen": "false",  # asked once, the first time it happens
     "open_mode": "native",          # how the app window opens: native | browser
     "update_check": "true",         # check GitHub for a newer release on launch
+    "update_chime": "false",        # sound when an update finds new tracks for an artist
     "saved_runs_keep": "5",         # how many past run results stay in "Recent results"
     "accepted_disclaimer": "false", # set true once the user accepts the first-run notice
 }

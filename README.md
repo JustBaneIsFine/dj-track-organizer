@@ -117,6 +117,8 @@ and don't add telemetry or anything that sends user data off the machine.
 
 [MIT](LICENSE). Use at your own risk.
 
+The update chime is `confirmation_004.ogg` from Kenney's Interface Sounds (CC0, kenney.nl).
+
 ## Disclaimer
 
 This software is provided "as is", without warranty of any kind. The author is not

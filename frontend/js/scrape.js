@@ -118,6 +118,7 @@ window.DJ.scrapeMixin = {
           r.added += ev.tracks_added;
           r.whatsNew.unshift({ name: ev.name, n: ev.tracks_added, artist_id: ev.artist_id });
           if (r.whatsNew.length > 100) r.whatsNew.length = 100;  // keep it bounded (newest first)
+          if (r.background) this._chime();  // updates only; imports stay silent
         }
         if (ev.error) r.errors.push({ name: ev.name, message: ev.error });
         if (r.processed % 3 === 0) { this.loadArtists(); this.loadStats(); }
@@ -130,6 +131,18 @@ window.DJ.scrapeMixin = {
       case "error": this.toast("Run error: " + ev.message, "err"); r.active = false; break;
       case "stream_end": if (this._es) { this._es.close(); this._es = null; } break;
     }
+  },
+
+  _chime() {
+    if (this.settings.update_chime !== "true") return;
+    try {
+      if (!this._chimeAudio) {
+        this._chimeAudio = new Audio("/static/assets/update-chime.ogg");
+        this._chimeAudio.volume = 0.4;
+      }
+      this._chimeAudio.currentTime = 0;
+      this._chimeAudio.play().catch(() => {});
+    } catch (e) {}
   },
 
   async _finishRun(ev) {
