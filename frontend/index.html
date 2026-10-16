@@ -31,6 +31,12 @@
       </div>
       <div class="update-notes" x-show="updateAvailable.notes" @click="openNoteLink($event)"
            x-html="updateAvailable.notesHtml || updateAvailable.notes"></div>
+      <template x-if="updateAvailable.video">
+        <button class="update-video" @click="window.open(updateAvailable.video.url, '_blank')">
+          <span class="uv-thumb"><img :src="updateAvailable.video.thumb" alt="" @error="$el.remove()"><span class="uv-play">▶</span></span>
+          <span class="uv-text"><b x-text="updateAvailable.video.title"></b><span class="muted">Watch on YouTube ↗</span></span>
+        </button>
+      </template>
       <div class="update-how">
         <b>How to update:</b> download the zip, delete the old DJOrganizer folder, extract the new one
         in its place. Your library and settings live in <code>.dj-organizer</code> in your home folder,

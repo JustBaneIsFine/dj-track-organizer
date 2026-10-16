@@ -331,14 +331,17 @@ function djApp() {
         if (!res.ok) return;
         const rel = await res.json();
         const latest = (rel.tag_name || "").replace(/^v/, "");
-        if (latest && this._verGreater(latest, this.meta.version || "0.0.0"))
+        if (latest && this._verGreater(latest, this.meta.version || "0.0.0")) {
+          const { notes, video } = this._pullVideo(this._cleanNotes(rel.body || ""));
           this.updateAvailable = {
             version: latest,
-            notes: this._cleanNotes(rel.body || ""),
-            notesHtml: this._notesHtml(this._cleanNotes(rel.body || "")),
+            notes,
+            notesHtml: this._notesHtml(notes),
+            video,
             page: rel.html_url || this.meta.releases_url,
             download: this.meta.download_url || rel.html_url || this.meta.releases_url,
           };
+        }
       } catch (e) {}
     },
 
@@ -393,6 +396,24 @@ function djApp() {
       e.preventDefault();
       const u = a.getAttribute("data-u") || "";
       if (/^https?:\/\//i.test(u)) window.open(u, "_blank");
+    },
+
+    // A bullet with a YouTube link becomes the video card under the notes.
+    // "- New overview video: https://youtu.be/ID" or "- [Title](https://youtu.be/ID)".
+    _pullVideo(body) {
+      const lines = String(body).split(/\r?\n/);
+      const yt = /(https?:\/\/(?:www\.)?(?:youtu\.be\/|youtube\.com\/watch\?v=)([\w-]{11})[^\s)]*)/;
+      const i = lines.findIndex((l) => /^\s*[-*+]\s+/.test(l) && yt.test(l));
+      if (i < 0) return { notes: body, video: null };
+      const line = lines[i], m = yt.exec(line);
+      const md = /\[([^\]]+)\]\(/.exec(line);
+      const title = md ? md[1]
+        : line.replace(/^\s*[-*+]\s+/, "").replace(m[1], "").replace(/[\s:.-]+$/, "").trim();
+      lines.splice(i, 1);
+      return {
+        notes: lines.join("\n").trim(),
+        video: { url: m[1], title: title || "New video", thumb: `https://img.youtube.com/vi/${m[2]}/mqdefault.jpg` },
+      };
     },
 
     _cleanNotes(body) {
