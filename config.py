@@ -17,7 +17,7 @@ APP_VERSION = "0.2.0.1"
 GITHUB_REPO = "JustBaneIsFine/dj-track-organizer"
 CONTACT_EMAIL = "djtezej@gmail.com"
 # Tutorial video; empty hides the About button until there is one.
-TUTORIAL_URL = "https://youtu.be/3hhMcEI-ye0"
+TUTORIAL_URL = "https://youtu.be/kowmLRPeob0"
 
 # Preferred port; main.py will fall through to PORT_FALLBACK_MAX if taken.
 PORT = 7331

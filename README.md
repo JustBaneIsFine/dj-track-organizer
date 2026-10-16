@@ -7,6 +7,8 @@ A local desktop app for working through the tracks you haven't heard yet. It col
 you've heard or want to come back to, and flag what you already own. No audio is
 downloaded or touched, and nothing leaves your computer.
 
+**[Watch the overview on YouTube](https://www.youtube.com/watch?v=kowmLRPeob0)**
+
 > **Read this first.** This reads **public** SoundCloud pages through your own browser,
 > collecting names and links. Use it responsibly and respect SoundCloud's Terms of
 > Service. Provided **as is, with no warranty** — how you use it is on you. **Not
