@@ -41,6 +41,7 @@ Frontend
 --------
 
 Alpine.js          MIT License            https://github.com/alpinejs/alpine
+Phosphor Icons     MIT License            https://github.com/phosphor-icons/core   (frontend/assets/icons)
 
 
 Python and its standard library are used under the Python Software Foundation

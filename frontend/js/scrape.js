@@ -182,7 +182,7 @@ window.DJ.scrapeMixin = {
       this.toast("Review stopped. The queued artists finish in the background.");
     } else {
       this.run.active = false;
-      this.toast("Saved - resume via Update ▾ → Continue last import");
+      this.toast("Saved. Resume it from Update > Continue last import");
     }
   },
   // Stop the background scrape worker too (from the top strip). Queued + un-reviewed

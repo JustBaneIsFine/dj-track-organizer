@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DJ Organizer</title>
   <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/icons.css" />
   <script src="/static/js/api.js"></script>
   <script src="/static/js/tracks.js"></script>
   <script src="/static/js/artists.js"></script>
@@ -22,19 +23,19 @@
   <template x-if="updateAvailable">
     <div class="banner update-banner" x-cloak>
       <div class="update-row">
-        <span>⬆ <b>Version <span x-text="updateAvailable.version"></span></b> is available
+        <span><i class="ic ic-arrow-circle-up"></i> <b>Version <span x-text="updateAvailable.version"></span></b> is available
           <span class="muted" x-text="'(you have ' + (meta.version || '?') + ')'"></span></span>
         <span class="spacer"></span>
         <button class="primary" @click="window.open(updateAvailable.download, '_blank')">Download</button>
-        <button class="ghost" x-show="updateAvailable.page" @click="window.open(updateAvailable.page, '_blank')">Details ↗</button>
+        <button class="ghost" x-show="updateAvailable.page" @click="window.open(updateAvailable.page, '_blank')">Details <i class="ic ic-arrow-square-out"></i></button>
         <button class="ghost" @click="updateAvailable = null">Dismiss</button>
       </div>
       <div class="update-notes" x-show="updateAvailable.notes" @click="openNoteLink($event)"
            x-html="updateAvailable.notesHtml || updateAvailable.notes"></div>
       <template x-if="updateAvailable.video">
         <button class="update-video" @click="window.open(updateAvailable.video.url, '_blank')">
-          <span class="uv-thumb"><img :src="updateAvailable.video.thumb" alt="" @error="$el.remove()"><span class="uv-play">▶</span></span>
-          <span class="uv-text"><b x-text="updateAvailable.video.title"></b><span class="muted">Watch on YouTube ↗</span></span>
+          <span class="uv-thumb"><img :src="updateAvailable.video.thumb" alt="" @error="$el.remove()"><span class="uv-play"><i class="ic ic-play"></i></span></span>
+          <span class="uv-text"><b x-text="updateAvailable.video.title"></b><span class="muted">Watch on YouTube <i class="ic ic-arrow-square-out"></i></span></span>
         </button>
       </template>
       <div class="update-how">
@@ -48,7 +49,7 @@
   <!-- Resume banner -->
   <template x-if="resumable">
     <div class="banner">
-      <span>⏸ Unfinished session - <b x-text="(resumable.processed_count||0) + '/' + (resumable.total_artists||0)"></b> artists done.</span>
+      <span><i class="ic ic-pause"></i> Unfinished session - <b x-text="(resumable.processed_count||0) + '/' + (resumable.total_artists||0)"></b> artists done.</span>
       <span class="spacer"></span>
       <button class="primary" @click="resumeSession()">Continue</button>
       <button @click="abandonResumable()">Abandon</button>
@@ -66,21 +67,21 @@
       <span class="muted" x-show="run.interactive" x-text="run.processed + ' done · ' + (run.queued||0) + ' queued'"></span>
       <span class="muted" x-show="!run.interactive && (run.total - run.processed - 1) > 0" x-text="'· ' + (run.total - run.processed - 1) + ' in queue'"></span>
       <span class="spacer"></span>
-      <button @click="run.interactive ? stopBgScrape() : stopSaveRun()" title="Stop updating. Progress is saved.">⏹ Stop</button>
+      <button @click="run.interactive ? stopBgScrape() : stopSaveRun()" title="Stop updating. Progress is saved."><i class="ic ic-stop"></i> Stop</button>
     </div>
   </template>
 
   <!-- Top bar -->
   <div class="topbar">
     <div class="brand">◐ DJ Organizer</div>
-    <input id="search" class="search" type="text" placeholder="🔍 search tracks…  ( / )"
-           x-model="filters.search" @input="onSearchInput()" />
+    <div class="search-wrap"><i class="ic ic-magnifying-glass"></i><input id="search" class="search" type="text" placeholder="search tracks…  ( / )"
+           x-model="filters.search" @input="onSearchInput()" /></div>
     <div class="spacer"></div>
     <div style="position:relative">
-      <button @click="showUpdateMenu = !showUpdateMenu; if (showUpdateMenu) loadRunResults()">Update ▾</button>
+      <button @click="showUpdateMenu = !showUpdateMenu; if (showUpdateMenu) loadRunResults()">Update <i class="ic ic-caret-down"></i></button>
       <div class="ctxmenu" style="right:0; left:auto" x-show="showUpdateMenu" @click.outside="showUpdateMenu=false" x-cloak>
         <button @click="runUpdate('full')">Full update (all active)</button>
-        <button @click="runUpdate('priority')">Priority update (≥ <span x-text="settings.priority_update_threshold||2"></span>★)</button>
+        <button @click="runUpdate('priority')">Priority update (≥ <span x-text="settings.priority_update_threshold||2"></span><i class="ic ic-star-fill"></i>)</button>
         <button @click="runUpdate('selected', selectedArtistIds)" :disabled="!selectedArtistIds.length">
           Update selected (<span x-text="selectedArtistIds.length"></span>)</button>
         <div style="padding:6px 8px; display:flex; gap:5px; align-items:center;" @click.stop>
@@ -90,12 +91,12 @@
         </div>
         <button @click="openImport(); showUpdateMenu=false">Import new artists…</button>
         <button x-show="resumableExists" x-cloak @click="continueLastImport(); showUpdateMenu=false"
-                title="Resume the last paused step-by-step import where it stopped">▶ Continue last import</button>
+                title="Resume the last paused step-by-step import where it stopped"><i class="ic ic-play"></i> Continue last import</button>
         <div class="section-label" style="padding:6px 8px 2px">Recent results</div>
         <template x-for="rr in runResults" :key="rr.id">
           <button @click="showRunTracks({ id: rr.id, label: rr.label || 'Run', count: rr.track_count })"
                   title="Show the tracks this run found new">
-            ✦ <span x-text="rr.track_count"></span> new ·
+            <i class="ic ic-sparkle"></i> <span x-text="rr.track_count"></span> new ·
             <span class="muted" x-text="rr.label"></span>
             <span class="muted" x-text="fmtRunDate(rr.created_at)"></span>
           </button>
@@ -105,14 +106,14 @@
       </div>
     </div>
     <button @click="pickFolder()" :disabled="ownedBusy" title="Check a music folder for tracks you already own">
-      <span x-show="!ownedBusy">📁 Check folder</span><span x-show="ownedBusy" x-cloak>Scanning…</span>
+      <span x-show="!ownedBusy"><i class="ic ic-folder"></i> Check folder</span><span x-show="ownedBusy" x-cloak>Scanning…</span>
     </button>
-    <button @click="toggleTheme()" :title="theme==='dark' ? 'Switch to light' : 'Switch to dark'"
-            x-text="theme==='dark' ? '☀' : '☾'"></button>
-    <button @click="openLayoutPanel()" title="Customize the compact layout">▤</button>
-    <button x-show="meta.kofi_url" x-cloak @click="window.open(meta.kofi_url, '_blank')" title="Support on Ko-fi">♡</button>
-    <button @click="openAbout()" title="About & links">ⓘ</button>
-    <button @click="openSettings()">⚙</button>
+    <button @click="toggleTheme()" :title="theme==='dark' ? 'Switch to light' : 'Switch to dark'">
+      <i class="ic ic-sun" x-show="theme==='dark'"></i><i class="ic ic-moon" x-show="theme!=='dark'"></i></button>
+    <button @click="openLayoutPanel()" title="Customize the compact layout"><i class="ic ic-layout"></i></button>
+    <button x-show="meta.kofi_url" x-cloak @click="window.open(meta.kofi_url, '_blank')" title="Support on Ko-fi"><i class="ic ic-heart"></i></button>
+    <button @click="openAbout()" title="About & links"><i class="ic ic-info"></i></button>
+    <button @click="openSettings()" title="Settings"><i class="ic ic-gear"></i></button>
   </div>
 
   <div class="main">
@@ -122,7 +123,7 @@
         <div class="big" x-show="lay('ov.totals') || (lay('ov.today') && density !== 'compact')">
           <span x-show="lay('ov.totals')"><b x-text="stats.artists"></b> artists · <b x-text="stats.tracks_total"></b> tracks</span><span
               x-show="lay('ov.today') && density !== 'compact'" style="float:right; font-weight:600; color:var(--accent, #5fd35f)"
-              title="Marked listened today">🎧 <span x-text="(stats.listened_today||0).toLocaleString()"></span> today</span></div>
+              title="Marked listened today"><i class="ic ic-headphones"></i> <span x-text="(stats.listened_today||0).toLocaleString()"></span> today</span></div>
         <!-- Smart segmented bar: non-zero new/revisit slivers are forced to a min
              width so a tiny amount stays visible among thousands of heard tracks. -->
         <div class="seg-bar" x-show="stats.tracks_total && lay('ov.bar')" :title="`${stats.listened||0} heard · ${stats.new||0} new · ${stats.revisit||0} revisit`">
@@ -138,9 +139,9 @@
           <span x-show="stats.revisit && lay('ov.legend')" x-cloak title="Revisit"><i class="dot rev"></i><b x-text="(stats.revisit||0).toLocaleString()"></b><span
                 class="leg-word"> revisit</span></span>
           <span class="leg-today" x-show="lay('ov.today') && density === 'compact'"
-                title="Tracks you marked listened today (resets at local midnight)">🎧 <b x-text="(stats.listened_today||0).toLocaleString()"></b> today</span>
+                title="Tracks you marked listened today (resets at local midnight)"><i class="ic ic-headphones"></i> <b x-text="(stats.listened_today||0).toLocaleString()"></b> today</span>
         </div>
-        <div class="muted" style="font-size:11px" x-show="lay('ov.origreposts')">orig <span x-text="(stats.originals_listened||0)+'/'+(stats.originals_total||0)"></span> · ↻ <span x-text="(stats.reposts_listened||0)+'/'+(stats.reposts_total||0)"></span></div>
+        <div class="muted" style="font-size:11px" x-show="lay('ov.origreposts')">orig <span x-text="(stats.originals_listened||0)+'/'+(stats.originals_total||0)"></span> · <i class="ic ic-repeat"></i> <span x-text="(stats.reposts_listened||0)+'/'+(stats.reposts_total||0)"></span></div>
         <div class="muted" x-show="lay('ov.meta')"><span x-text="stats.priority_artists"></span> priority · <span x-text="stats.owned||0"></span> owned · last update <span x-text="fmtDate(stats.last_update)"></span></div>
       </div>
       <div class="sidebar-head">
@@ -160,7 +161,7 @@
           <button class="mini" :class="{ 'filter-on': selectedArtistIds.length }" @click="clearArtistFilter()" :disabled="!selectedArtistIds.length"
                   x-text="selectedArtistIds.length ? ('Clear filter (' + selectedArtistIds.length + ')') : 'Clear filter'"></button>
           <button class="mini" @click="showAddArtist = !showAddArtist">+ Add artist</button>
-          <button class="mini" x-show="(stats.unscraped_artists || 0) > 0 || artistUnscraped" :class="{ 'filter-on': artistUnscraped }" @click="toggleUnscraped()" title="Artists added but never updated" x-cloak>⊘ Never updated</button>
+          <button class="mini" x-show="(stats.unscraped_artists || 0) > 0 || artistUnscraped" :class="{ 'filter-on': artistUnscraped }" @click="toggleUnscraped()" title="Artists added but never updated" x-cloak><i class="ic ic-prohibit"></i> Never updated</button>
         </div>
         <div x-show="showAddArtist" style="margin-top:7px; display:flex; flex-direction:column; gap:5px;" x-cloak>
           <input type="text" placeholder="soundcloud.com/artist" x-model="addArtistUrl" @keydown.enter="submitAddArtist(false)" />
@@ -178,17 +179,17 @@
             <div class="artist-row1">
               <span class="stars" :class="'p'+a.priority" x-show="lay('ar.stars')" @click.stop>
                 <template x-for="i in starsArr" :key="i">
-                  <span class="star" :class="{ on: i <= a.priority }" @click="setPriority(a, i)" x-text="'★'"></span>
+                  <span class="star" :class="{ on: i <= a.priority }" @click="setPriority(a, i)"><i class="ic ic-star-fill"></i></span>
                 </template>
               </span>
               <span class="artist-name" x-text="a.name"></span>
-              <button class="mini" x-show="lay('ar.update')" @click.stop="updateSingleArtist(a)" title="Update this artist">⟳</button>
+              <button class="mini" x-show="lay('ar.update')" @click.stop="updateSingleArtist(a)" title="Update this artist"><i class="ic ic-arrows-clockwise"></i></button>
             </div>
             <div class="artist-meta">
               <span x-show="lay('ar.orig')" x-text="(a.originals_total||0) + ' orig'"></span>
-              <span x-show="a.reposts_total && lay('ar.reposts')" x-text="a.reposts_total + ' ↻'"></span>
+              <span x-show="a.reposts_total && lay('ar.reposts')" ><span x-text="a.reposts_total"></span> <i class="ic ic-repeat"></i></span>
               <span class="new" x-show="a.new_count && lay('ar.new')" x-text="a.new_count + ' new'"></span>
-              <span class="rv" x-show="a.revisit_count && lay('ar.revisit')" x-text="a.revisit_count + ' ⟳'"></span>
+              <span class="rv" x-show="a.revisit_count && lay('ar.revisit')" ><span x-text="a.revisit_count"></span> <i class="ic ic-clock-counter-clockwise"></i></span>
             </div>
             <!-- Counts (above) are the real signal; this thin bar is just an
                  ambient sense of overall progress. ✓ when nothing's left. -->
@@ -196,7 +197,7 @@
                  :title="`${a.listened_count||0}/${a.tracks_total||0} heard`">
               <div :style="`width:${segPct(a,'listened_count')}%`"></div>
             </div>
-            <div class="done-check" x-show="a.tracks_total && !a.new_count && !a.revisit_count && lay('ar.done')">✓ all heard</div>
+            <div class="done-check" x-show="a.tracks_total && !a.new_count && !a.revisit_count && lay('ar.done')"><i class="ic ic-check"></i> all heard</div>
           </div>
         </template>
         <div class="empty" x-show="!artists.length">No artists yet. Import or add one.</div>
@@ -209,12 +210,12 @@
       <template x-if="runSet">
         <div class="banner runbanner" x-cloak>
           <div class="rb-text">
-            <span class="rb-label">✦ Update results: <span x-text="runSet && runSet.count"></span> left to review
+            <span class="rb-label"><i class="ic ic-sparkle"></i> Update results: <span x-text="runSet && runSet.count"></span> left to review
               from <span x-text="runSet && runSet.label"></span></span>
             <span class="rb-note">Filters apply to what this update found. Closes on its own once everything here is reviewed.</span>
           </div>
           <span class="spacer"></span>
-          <button class="rb-exit" @click="clearRunSet()" title="Back to all tracks (Esc)">✕ Exit results</button>
+          <button class="rb-exit" @click="clearRunSet()" title="Back to all tracks (Esc)"><i class="ic ic-x"></i> Exit results</button>
         </div>
       </template>
 
@@ -223,34 +224,34 @@
           <span class="chip" x-show="lay('filter.all')" :class="{on: filters.status==='all'}" @click="setStatus('all')">All <span class="chip-count" x-text="chipStats.tracks_total||0"></span></span>
           <span class="chip" x-show="lay('filter.new')" :class="{on: filters.status==='new'}" @click="setStatus('new')">New <span class="chip-count" x-text="chipStats.new||0"></span></span>
           <span class="chip" x-show="lay('filter.listened')" :class="{on: filters.status==='listened'}" @click="setStatus('listened')">Listened <span class="chip-count" x-text="chipStats.listened||0"></span></span>
-          <span class="chip" x-show="lay('filter.revisit')" :class="{on: filters.status==='revisit'}" @click="setStatus('revisit')">⟳ Revisit <span class="chip-count" x-text="chipStats.revisit||0"></span></span>
+          <span class="chip" x-show="lay('filter.revisit')" :class="{on: filters.status==='revisit'}" @click="setStatus('revisit')"><i class="ic ic-clock-counter-clockwise"></i> Revisit <span class="chip-count" x-text="chipStats.revisit||0"></span></span>
           <template x-if="filters.status==='revisit' && lay('filter.openmode')">
             <span class="chip" :class="{on: openDownloadLink}" @click="openDownloadLink=!openDownloadLink"
                   title="Clicking a track opens its download link instead of SoundCloud."
-                  x-text="openDownloadLink ? '⬇ Opens: download link' : '↗ Opens: SoundCloud'"></span>
+                  ><span x-show="openDownloadLink"><i class="ic ic-download-simple"></i> Opens: download link</span><span x-show="!openDownloadLink"><i class="ic ic-arrow-square-out"></i> Opens: SoundCloud</span></span>
           </template>
         </div>
         <template x-if="narrow && selectedArtistIds.length">
           <span class="chip on artist-crumb" x-cloak @click="clearArtistFilter()"
                 title="Showing one artist only. Click to clear.">
-            <span x-text="artistCrumbLabel()"></span> ✕</span>
+            <span x-text="artistCrumbLabel()"></span> <i class="ic ic-x"></i></span>
         </template>
         <span class="sep" x-show="lay('filter.type')"></span>
         <div class="chip-group" x-show="lay('filter.type')">
           <span class="chip" :class="{on: filters.type==='all'}" @click="setType('all')">All types</span>
           <span class="chip" :class="{on: filters.type==='originals'}" @click="setType('originals')">Originals <span class="chip-count" x-text="chipStats.originals_total||0"></span></span>
-          <span class="chip" :class="{on: filters.type==='reposts'}" @click="setType('reposts')">↻ Reposts <span class="chip-count" x-text="chipStats.reposts_total||0"></span></span>
+          <span class="chip" :class="{on: filters.type==='reposts'}" @click="setType('reposts')"><i class="ic ic-repeat"></i> Reposts <span class="chip-count" x-text="chipStats.reposts_total||0"></span></span>
         </div>
         <span class="sep" x-show="lay('filter.link')"></span>
         <div class="chip-group" x-show="lay('filter.link')">
-          <span class="chip" :class="{on: filters.link==='free'}" @click="setLink('free')" title="Tracks with a free download link. Click again to clear.">↓ Free <span class="chip-count" x-text="chipStats.free_total||0"></span></span>
-          <span class="chip" :class="{on: filters.link==='buy'}" @click="setLink('buy')" title="Tracks that link to Bandcamp or Beatport. Click again to clear.">↗ Buy <span class="chip-count" x-text="chipStats.buy_total||0"></span></span>
+          <span class="chip" :class="{on: filters.link==='free'}" @click="setLink('free')" title="Tracks with a free download link. Click again to clear."><i class="ic ic-download-simple"></i> Free <span class="chip-count" x-text="chipStats.free_total||0"></span></span>
+          <span class="chip" :class="{on: filters.link==='buy'}" @click="setLink('buy')" title="Tracks that link to Bandcamp or Beatport. Click again to clear."><i class="ic ic-shopping-cart-simple"></i> Buy <span class="chip-count" x-text="chipStats.buy_total||0"></span></span>
         </div>
         <span class="sep" x-show="lay('filter.stars')"></span>
         <div class="chip-group" x-show="lay('filter.stars')">
-          <span class="chip" :class="{on: starActive(0)}" @click="toggleStar(0)" title="No stars">☆</span>
+          <span class="chip" :class="{on: starActive(0)}" @click="toggleStar(0)" title="No stars"><i class="ic ic-star"></i></span>
           <template x-for="n in starsArr" :key="n">
-            <span class="chip" :class="{on: starActive(n)}" @click="toggleStar(n)" x-text="n+'★'"></span>
+            <span class="chip" :class="{on: starActive(n)}" @click="toggleStar(n)"><span x-text="n"></span><i class="ic ic-star-fill"></i></span>
           </template>
         </div>
         <span class="sep" x-show="lay('filter.deleted') || lay('filter.owned')"></span>
@@ -276,14 +277,14 @@
       <!-- Bulk action bar (always visible: select-all lives here) -->
       <div class="bulkbar" :class="{ on: allVisibleSelected() }">
         <span class="check" :class="{on: allVisibleSelected()}" @click="toggleSelectAll()"
-              x-text="allVisibleSelected() ? '✓' : ''" title="Select / deselect all visible"></span>
+              title="Select / deselect all visible"><i class="ic ic-check" x-show="allVisibleSelected()"></i></span>
         <span x-text="selectedTrackIds.length ? (selectedTrackIds.length + ' selected') : 'Select all'"></span>
         <template x-if="selectedTrackIds.length">
           <span style="display:flex; gap:8px; align-items:center;">
             <button class="mini" @click="bulkListened()">Mark listened</button>
             <button class="mini" @click="copyNoDownloadSelected()"
-                    title="Copies the links of selected tracks with no free download (or only Bandcamp/Beatport) and marks them listened. Ones with a real download link stay selected.">⧉ Copy non-DL & listened</button>
-            <button class="mini" @click="bulkRevisit()">⟳ Revisit</button>
+                    title="Copies the links of selected tracks with no free download (or only Bandcamp/Beatport) and marks them listened. Ones with a real download link stay selected."><i class="ic ic-copy"></i> Copy non-DL & listened</button>
+            <button class="mini" @click="bulkRevisit()"><i class="ic ic-clock-counter-clockwise"></i> Revisit</button>
             <button class="mini" @click="bulkUnlistened()">Mark new</button>
             <button class="mini" @click="bulkDelete()">Delete</button>
             <button class="mini" x-show="filters.showDeleted" @click="bulkRestore()">Restore</button>
@@ -294,7 +295,7 @@
           </span>
         </template>
         <span class="spacer" style="flex:1"></span>
-        <button class="mini" x-show="undoStack.length" @click="undo()" title="Undo last track change (Ctrl+Z)">↶ Undo</button>
+        <button class="mini" x-show="undoStack.length" @click="undo()" title="Undo last track change (Ctrl+Z)"><i class="ic ic-arrow-u-up-left"></i> Undo</button>
       </div>
 
       <!-- Track list -->
@@ -304,27 +305,27 @@
                @contextmenu="openCtx($event, t)" @click="rowClick(t, i, $event)">
             <div class="row-marks">
               <span class="mark heard" :class="{on: t.is_checked}" @click.stop="toggleCheck(t)" title="Mark listened">
-                <span class="mark-box" x-text="t.is_checked ? '✓' : ''"></span>
+                <span class="mark-box"><i class="ic ic-check" x-show="t.is_checked"></i></span>
                 <span class="mark-label">Heard</span>
               </span>
               <span class="mark later" :class="{on: t.is_revisit}" @click.stop="toggleRevisit(t)" title="Revisit later">
-                <span class="mark-box" x-text="t.is_revisit ? '⟳' : ''"></span>
+                <span class="mark-box"><i class="ic ic-clock-counter-clockwise" x-show="t.is_revisit"></i></span>
                 <span class="mark-label">Later</span>
               </span>
             </div>
             <span class="track-artist">
-              <span class="stars-static" :class="'p'+t.artist_priority" x-show="!(t.group_size > 1)" x-text="starStr(t.artist_priority)"></span>
+              <span class="stars-static" :class="'p'+t.artist_priority" x-show="!(t.group_size > 1)" ><template x-for="i in Math.max(0, Math.min(4, t.artist_priority || 0))" :key="i"><i class="ic ic-star-fill"></i></template></span>
               <span class="name" :class="{ merged: t.group_size > 1 }" x-text="t.group_size > 1 ? 'Various / Merged' : t.artist_name"></span>
             </span>
             <span class="track-name" @click.stop="openTrack(t)">
-              <span class="repost-tag" x-show="t.is_repost">↻</span><span class="tname" x-text="t.name"></span>
+              <span class="repost-tag" x-show="t.is_repost"><i class="ic ic-repeat"></i></span><span class="tname" x-text="t.name"></span>
               <span class="merged-badge" x-show="t.group_size > 1" x-cloak x-text="'shared by ' + t.group_size"></span>
-              <span class="revisit-badge" x-show="t.is_revisit" x-cloak>⟳ revisit</span>
-              <span class="link-badge free" x-show="lay('tr.link') && linkKind(t)==='free'" x-cloak title="Has a free download link">↓ free</span>
-              <span class="link-badge buy" x-show="lay('tr.link') && linkKind(t)==='buy'" x-cloak title="Links to a store">↗ buy</span>
-              <span class="owned-badge" x-show="t.is_owned" x-cloak>✓ owned</span>
+              <span class="revisit-badge" x-show="t.is_revisit" x-cloak><i class="ic ic-clock-counter-clockwise"></i> revisit</span>
+              <span class="link-badge free" x-show="lay('tr.link') && linkKind(t)==='free'" x-cloak title="Has a free download link"><i class="ic ic-download-simple"></i> free</span>
+              <span class="link-badge buy" x-show="lay('tr.link') && linkKind(t)==='buy'" x-cloak title="Links to a store"><i class="ic ic-shopping-cart-simple"></i> buy</span>
+              <span class="owned-badge" x-show="t.is_owned" x-cloak><i class="ic ic-check"></i> owned</span>
             </span>
-            <span class="ext" @click.stop="openTrack(t)" title="Open in browser">↗</span>
+            <span class="ext" @click.stop="openTrack(t)" title="Open in browser"><i class="ic ic-arrow-square-out"></i></span>
           </div>
         </template>
         <div class="empty" x-show="!tracks.length && !tracksLoading">No tracks match your filters.</div>
@@ -337,7 +338,7 @@
 
     <!-- Discover placeholder -->
     <div class="tracks-panel" x-show="view==='discover'" x-cloak>
-      <div class="empty">🎧 Discovery mode - one track at a time from your priority artists.<br><br><span class="muted">Coming soon.</span></div>
+      <div class="empty"><i class="ic ic-headphones"></i> Discovery mode - one track at a time from your priority artists.<br><br><span class="muted">Coming soon.</span></div>
     </div>
   </div>
 
@@ -375,7 +376,7 @@
   <template x-if="showOnboarding">
     <div class="overlay">
       <div class="modal">
-        <h2>Welcome to DJ Organizer 🎧</h2>
+        <h2>Welcome to DJ Organizer <i class="ic ic-headphones"></i></h2>
         <div class="body">
           <div class="muted">Somewhere to keep the tracks you still need to get through. Names, links
             and what you've heard. It never touches audio files.</div>
@@ -395,10 +396,10 @@
         </div>
         <div class="foot">
           <template x-if="meta.tutorial_url">
-            <button @click="window.open(meta.tutorial_url, '_blank')" title="Short video covering the basics">▶ Watch the basics</button>
+            <button @click="window.open(meta.tutorial_url, '_blank')" title="Short video covering the basics"><i class="ic ic-play"></i> Watch the basics</button>
           </template>
           <button @click="finishOnboarding(false)">I'll explore first</button>
-          <button class="primary" @click="finishOnboarding(true)">Import artists →</button>
+          <button class="primary" @click="finishOnboarding(true)">Import artists <i class="ic ic-arrow-right"></i></button>
         </div>
       </div>
     </div>
@@ -422,7 +423,7 @@
           </ul>
         </div>
         <div class="foot">
-          <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Learn more ↗</button>
+          <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Learn more <i class="ic ic-arrow-square-out"></i></button>
           <span style="flex:1"></span>
           <button class="primary" @click="acceptDisclaimer()">I understand</button>
         </div>
@@ -452,7 +453,7 @@
                     <span class="lay-group-label" x-show="g.label" x-text="g.label"></span>
                     <template x-for="it in g.items" :key="it.key">
                       <span class="lay-item" :class="{ on: lay2(it.key) }" @click="toggleLay(it.key)"
-                            x-text="it.label"></span>
+                            x-html="it.label"></span>
                     </template>
                   </div>
                 </template>
@@ -488,20 +489,20 @@
           <template x-if="meta.tutorial_url">
             <div style="margin-top:14px">
               <button class="primary" style="width:100%; padding:10px; font-size:14px"
-                      @click="window.open(meta.tutorial_url, '_blank')">▶ Watch the basics</button>
+                      @click="window.open(meta.tutorial_url, '_blank')"><i class="ic ic-play"></i> Watch the basics</button>
             </div>
           </template>
           <div class="section-label">Links</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap">
-            <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Source on GitHub ↗</button>
-            <button x-show="meta.issues_url" @click="window.open(meta.issues_url, '_blank')">Report a bug ↗</button>
+            <button x-show="meta.github_url" @click="window.open(meta.github_url, '_blank')">Source on GitHub <i class="ic ic-arrow-square-out"></i></button>
+            <button x-show="meta.issues_url" @click="window.open(meta.issues_url, '_blank')">Report a bug <i class="ic ic-arrow-square-out"></i></button>
             <button x-show="meta.github_url" @click="window.open(meta.github_url + '#contact', '_blank')">Contact</button>
           </div>
           <template x-if="meta.kofi_url">
             <div>
               <div class="section-label">Support</div>
               <div class="muted" style="font-size:12px">Free and open source. Tips go toward keeping it maintained.</div>
-              <button style="margin-top:8px" @click="window.open(meta.kofi_url, '_blank')">☕ Buy me a coffee on Ko-fi ↗</button>
+              <button style="margin-top:8px" @click="window.open(meta.kofi_url, '_blank')"><i class="ic ic-coffee"></i> Buy me a coffee on Ko-fi <i class="ic ic-arrow-square-out"></i></button>
             </div>
           </template>
           <div class="muted" style="font-size:11px; margin-top:10px">
@@ -550,7 +551,7 @@
             <label>Match strictness: <b x-text="ownedReview.threshold + '%'"></b></label>
             <input type="range" :min="ownedReview.floor != null ? ownedReview.floor : ownedFloor()" max="100" step="1" x-model.number="ownedReview.threshold" />
           </div>
-          <div class="muted" style="font-size:11px">Click a match to open it on SoundCloud<span x-show="ownedReview.hasPaths">, or ▶ to play your copy</span>. Untick anything that isn't the same song and it won't come back.</div>
+          <div class="muted" style="font-size:11px">Click a match to open it on SoundCloud<span x-show="ownedReview.hasPaths">, or <i class="ic ic-play"></i> to play your copy</span>. Untick anything that isn't the same song and it won't come back.</div>
           <div class="preview" x-show="ownedDisplayed().length">
             <template x-for="m in ownedDisplayed()" :key="m.track_id">
               <div class="pv" :style="m.url ? 'cursor:pointer' : ''" @click="m.url && window.open(m.url, '_blank')"
@@ -558,10 +559,10 @@
                 <input type="checkbox" x-model="m.sel" @click.stop title="Apply to this match" />
                 <span style="color:var(--accent)" x-text="m.score + '%'"></span>
                 <span x-text="(m.artist_name ? m.artist_name + ' - ' : '') + m.track_name"></span>
-                <span class="ext" x-show="m.url" style="opacity:.7">↗</span>
+                <span class="ext" x-show="m.url" style="opacity:.7"><i class="ic ic-arrow-square-out"></i></span>
                 <button class="mini" x-show="ownedReview.hasPaths" @click.stop="openLocalFile(m)"
-                        title="Play the local file in your default player">▶</button>
-                <div class="muted" style="font-size:11px" x-text="'↳ ' + m.filename"></div>
+                        title="Play the local file in your default player"><i class="ic ic-play"></i></button>
+                <div class="muted" style="font-size:11px"><i class="ic ic-arrow-elbow-down-right"></i> <span x-text="m.filename"></span></div>
               </div>
             </template>
           </div>
@@ -571,7 +572,7 @@
           <button @click="closeOwnedReview()">Cancel</button>
           <span style="flex:1"></span>
           <button @click="applyOwned('delete')" :disabled="!ownedDisplayed().length">Soft-delete these</button>
-          <button class="primary" @click="applyOwned('own')" :disabled="!ownedDisplayed().length">✓ Tag as owned</button>
+          <button class="primary" @click="applyOwned('own')" :disabled="!ownedDisplayed().length"><i class="ic ic-check"></i> Tag as owned</button>
         </div>
       </div>
     </div>
@@ -631,7 +632,7 @@
             <label>Priority</label>
             <span class="stars" :class="'p'+interactive.priority" style="font-size:22px">
               <template x-for="i in starsArr" :key="i">
-                <span class="star" :class="{on: i<=interactive.priority}" @click="cardSetPriority(i)">★</span>
+                <span class="star" :class="{on: i<=interactive.priority}" @click="cardSetPriority(i)"><i class="ic ic-star-fill"></i></span>
               </template>
             </span>
           </div>
@@ -646,18 +647,18 @@
           </div>
           <div class="muted" style="font-size:12px">Keys: 1-4 priority · Enter add · S skip</div>
           <div class="muted" x-show="run.bgActive || run.queued" x-cloak style="font-size:12px">
-            ⟳ Updating in background: <b x-text="run.bgName"></b>
+            <i class="ic ic-arrows-clockwise"></i> Updating in background: <b x-text="run.bgName"></b>
             <span x-show="run.queued" x-text="'· ' + run.queued + ' queued'"></span>
             <span x-show="run.bgCount" x-text="'· ' + run.bgCount + (run.bgPhase === \'reposts\' ? \' reposts\' : \' tracks\')"></span>
           </div>
         </div>
         <div class="foot">
-          <button @click="stopSaveRun()" title="Queued artists finish in the background. The rest resumes later.">⏹ Stop &amp; save</button>
+          <button @click="stopSaveRun()" title="Queued artists finish in the background. The rest resumes later."><i class="ic ic-stop"></i> Stop &amp; save</button>
           <button class="danger" @click="abandonRun()" title="Discard this import (not resumable)">Discard</button>
           <span style="flex:1"></span>
           <button @click="decideSkip()">Skip</button>
           <button @click="decideAddOnly()" title="Add now, update later">+ Add only</button>
-          <button class="primary" @click="decideAdd()">✓ Add &amp; update</button>
+          <button class="primary" @click="decideAdd()"><i class="ic ic-check"></i> Add &amp; update</button>
         </div>
       </div>
     </div>
@@ -690,27 +691,27 @@
               <div class="section-label">What's new</div>
               <div class="preview">
                 <template x-for="w in run.whatsNew" :key="w.artist_id">
-                  <div class="pv" style="cursor:pointer" @click="jumpToNew(w)">✦ <span x-text="w.n"></span> new - <span x-text="w.name"></span></div>
+                  <div class="pv" style="cursor:pointer" @click="jumpToNew(w)"><i class="ic ic-sparkle"></i> <span x-text="w.n"></span> new - <span x-text="w.name"></span></div>
                 </template>
               </div>
             </div>
           </template>
-          <div x-show="run.errors.length" class="muted">⚠ <span x-text="run.errors.length"></span> error(s)</div>
+          <div x-show="run.errors.length" class="muted"><i class="ic ic-warning"></i> <span x-text="run.errors.length"></span> error(s)</div>
         </div>
         <div class="foot">
           <template x-if="run.active">
             <div style="display:flex; gap:8px; width:100%">
-              <button x-show="!run.paused" @click="pauseRun()">⏸ Pause</button>
-              <button x-show="run.paused" class="primary" @click="resumeRun()">▶ Resume</button>
+              <button x-show="!run.paused" @click="pauseRun()"><i class="ic ic-pause"></i> Pause</button>
+              <button x-show="run.paused" class="primary" @click="resumeRun()"><i class="ic ic-play"></i> Resume</button>
               <span style="flex:1"></span>
-              <button @click="stopSaveRun()" title="Stop and save - resume later">⏹ Stop &amp; save</button>
+              <button @click="stopSaveRun()" title="Stop and save - resume later"><i class="ic ic-stop"></i> Stop &amp; save</button>
               <button class="danger" @click="abandonRun()" title="Discard (not resumable)">Discard</button>
             </div>
           </template>
           <button x-show="!run.active && run.runId" x-cloak class="primary"
                   @click="showRunTracks({ id: run.runId, label: 'Last run', count: run.newCount })"
                   title="Show every track this run found new, from all artists at once">
-            ✦ Show all <span x-text="run.newCount"></span> new tracks</button>
+            <i class="ic ic-sparkle"></i> Show all <span x-text="run.newCount"></span> new tracks</button>
           <button x-show="!run.active" @click="closeRunPanel()">Done</button>
         </div>
       </div>
@@ -733,12 +734,12 @@
                :title="`${artistPanel.listened_count||0}/${artistPanel.tracks_total||0} heard`">
             <div :style="`width:${segPct(artistPanel,'listened_count')}%`"></div>
           </div>
-          <div class="done-check" x-show="artistPanel.tracks_total && !artistPanel.new_count && !artistPanel.revisit_count" style="margin-bottom:6px">✓ all heard</div>
+          <div class="done-check" x-show="artistPanel.tracks_total && !artistPanel.new_count && !artistPanel.revisit_count" style="margin-bottom:6px"><i class="ic ic-check"></i> all heard</div>
           <div class="row">
-            <button x-show="artistPanel.url" @click="window.open(artistPanel.url, '_blank')" title="Open this artist's SoundCloud page in a new tab">Open page ↗</button>
+            <button x-show="artistPanel.url" @click="window.open(artistPanel.url, '_blank')" title="Open this artist's SoundCloud page in a new tab">Open page <i class="ic ic-arrow-square-out"></i></button>
             <button @click="checkArtistFolder(artistPanel)" :disabled="ownedBusy" title="Check a folder for tracks you own by this artist - matched only against their tracks, at a more lenient strictness">Check folder…</button>
             <button @click="toggleActive(artistPanel); artistPanel.is_active = artistPanel.is_active?0:1">
-              <span x-text="artistPanel.is_active ? 'Active ✓' : 'Inactive'"></span></button>
+              <span x-show="artistPanel.is_active">Active <i class="ic ic-check"></i></span><span x-show="!artistPanel.is_active">Inactive</span></button>
             <button class="danger" x-show="!artistPanel.is_deleted" @click="deleteArtist(artistPanel); closeArtistPanel()">Soft-delete artist</button>
             <button x-show="artistPanel.is_deleted" @click="restoreArtist(artistPanel); closeArtistPanel()">Restore artist</button>
           </div>
@@ -840,8 +841,8 @@
           <div class="field">
             <label>Theme</label>
             <div class="row">
-              <button :class="{ 'filter-on': theme==='dark' }" @click="theme!=='dark' && toggleTheme()">☾ Dark</button>
-              <button :class="{ 'filter-on': theme==='light' }" @click="theme!=='light' && toggleTheme()">☀ Light</button>
+              <button :class="{ 'filter-on': theme==='dark' }" @click="theme!=='dark' && toggleTheme()"><i class="ic ic-moon"></i> Dark</button>
+              <button :class="{ 'filter-on': theme==='light' }" @click="theme!=='light' && toggleTheme()"><i class="ic ic-sun"></i> Light</button>
             </div>
           </div>
           <div class="field">

@@ -176,13 +176,15 @@ function djApp() {
     _applyTheme() {
       document.documentElement.dataset.theme = this.theme;
       const s = document.documentElement.style;
-      s.setProperty("--accent", this.accent);
+      // Bright accents wash out on the gray light theme, so text-ish uses get a darker shade.
+      const ink = (hex) => this.theme === "light" ? this._darken(hex, 0.72) : hex;
+      s.setProperty("--accent", ink(this.accent));
       s.setProperty("--accent-dim", this._darken(this.accent));
-      s.setProperty("--accent-soft", this._rgba(this.accent, 0.14));
-      s.setProperty("--star", this.accent);
+      s.setProperty("--accent-soft", this._rgba(this.accent, this.theme === "light" ? 0.2 : 0.14));
+      s.setProperty("--star", ink(this.accent));
       // Listened follows the accent unless the user picked a distinct colour.
-      s.setProperty("--listened", this.accentListened || this.accent);
-      s.setProperty("--revisit", this.accentRevisit || "#e0b84a");
+      s.setProperty("--listened", ink(this.accentListened || this.accent));
+      s.setProperty("--revisit", ink(this.accentRevisit || "#e0b84a"));
     },
     toggleTheme() {
       this.theme = this.theme === "dark" ? "light" : "dark";
@@ -520,7 +522,6 @@ function djApp() {
     // helpers for templates
     starsArr: [1, 2, 3, 4],
     // Cheap display-only stars (avoids a nested x-for per row - big render win).
-    starStr(n) { return "★".repeat(Math.max(0, Math.min(4, n || 0))); },
     // Segment width (% of an artist's total tracks) for the unified progress bar.
     segPct(a, key) { const t = a.tracks_total || 0; return t ? Math.round((100 * (a[key] || 0)) / t) : 0; },
     isNew(t) { return this.newTrackIds.includes(t.id); },

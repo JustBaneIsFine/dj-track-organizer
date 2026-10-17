@@ -14,17 +14,17 @@ window.DJ.LAYOUT_SECTIONS = [
         { key: "filter.all", label: "All", on: true },
         { key: "filter.new", label: "New", on: true },
         { key: "filter.listened", label: "Listened", on: false },
-        { key: "filter.revisit", label: "⟳ Revisit", on: true },
-        { key: "filter.openmode", label: "⬇ Opens: link (revisit only)", on: true },
+        { key: "filter.revisit", label: "<i class='ic ic-clock-counter-clockwise'></i> Revisit", on: true },
+        { key: "filter.openmode", label: "<i class='ic ic-download-simple'></i> Opens: link (revisit only)", on: true },
       ] },
       { label: "Type", items: [
-        { key: "filter.type", label: "All types / Originals / ↻ Reposts", on: false },
+        { key: "filter.type", label: "All types / Originals / <i class='ic ic-repeat'></i> Reposts", on: false },
       ] },
       { label: "Link", items: [
-        { key: "filter.link", label: "↓ Free / ↗ Buy", on: false },
+        { key: "filter.link", label: "<i class='ic ic-download-simple'></i> Free / <i class='ic ic-shopping-cart-simple'></i> Buy", on: false },
       ] },
       { label: "Stars", items: [
-        { key: "filter.stars", label: "☆ 1★ 2★ 3★ 4★", on: false },
+        { key: "filter.stars", label: "<i class='ic ic-star'></i> 1<i class='ic ic-star-fill'></i> 2<i class='ic ic-star-fill'></i> 3<i class='ic ic-star-fill'></i> 4<i class='ic ic-star-fill'></i>", on: false },
       ] },
       { label: "Extras", items: [
         { key: "filter.deleted", label: "Show deleted", on: false },
@@ -38,10 +38,10 @@ window.DJ.LAYOUT_SECTIONS = [
     groups: [
       { label: "", items: [
         { key: "ov.totals", label: "N artists · N tracks", on: false },
-        { key: "ov.today", label: "🎧 N today", on: true },
+        { key: "ov.today", label: "<i class='ic ic-headphones'></i> N today", on: true },
         { key: "ov.bar", label: "Progress bar", on: true },
         { key: "ov.legend", label: "N heard · N new · N revisit", on: true },
-        { key: "ov.origreposts", label: "orig 12/40 · ↻ 3/9", on: false },
+        { key: "ov.origreposts", label: "orig 12/40 · <i class='ic ic-repeat'></i> 3/9", on: false },
         { key: "ov.meta", label: "N priority · N owned · last update", on: false },
       ] },
     ],
@@ -51,14 +51,14 @@ window.DJ.LAYOUT_SECTIONS = [
     note: "The artist name is always shown.",
     groups: [
       { label: "", items: [
-        { key: "ar.stars", label: "★★★★ priority", on: true },
-        { key: "ar.update", label: "⟳ update button", on: true },
+        { key: "ar.stars", label: "<i class='ic ic-star-fill'></i><i class='ic ic-star-fill'></i><i class='ic ic-star-fill'></i><i class='ic ic-star-fill'></i> priority", on: true },
+        { key: "ar.update", label: "<i class='ic ic-arrows-clockwise'></i> update button", on: true },
         { key: "ar.orig", label: "N orig", on: false },
-        { key: "ar.reposts", label: "N ↻", on: false },
+        { key: "ar.reposts", label: "N <i class='ic ic-repeat'></i>", on: false },
         { key: "ar.new", label: "N new", on: true },
-        { key: "ar.revisit", label: "N ⟳", on: true },
+        { key: "ar.revisit", label: "N <i class='ic ic-clock-counter-clockwise'></i>", on: true },
         { key: "ar.bar", label: "Progress bar", on: true },
-        { key: "ar.done", label: "✓ all heard", on: true },
+        { key: "ar.done", label: "<i class='ic ic-check'></i> all heard", on: true },
       ] },
     ],
   },
@@ -67,7 +67,7 @@ window.DJ.LAYOUT_SECTIONS = [
     note: "Title, artist and the listened / revisit marks are always shown.",
     groups: [
       { label: "", items: [
-        { key: "tr.link", label: "↓ free / ↗ buy pill", on: true },
+        { key: "tr.link", label: "<i class='ic ic-download-simple'></i> free / <i class='ic ic-shopping-cart-simple'></i> buy pill", on: true },
       ] },
     ],
   },

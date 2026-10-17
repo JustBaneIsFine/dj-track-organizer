@@ -25,17 +25,21 @@
 
 /* Light theme: override the surface/text palette; --accent is set by the user. */
 :root[data-theme="light"] {
-  --bg: #f5f5f7;
-  --bg-elev: #ffffff;
-  --bg-elev2: #ececef;
-  --border: #d6d6dc;
-  --text: #1b1b20;
-  --text-dim: #66666e;
-  --text-faint: #a2a2aa;
-  --star-off: #c6c6ce;
-  --run: #3d6fe0;
-  --run-soft: rgba(61,111,224,.10);
+  --bg: #cfd1d6;
+  --bg-elev: #dcdee2;
+  --bg-elev2: #c4c7cd;
+  --border: #b0b4bb;
+  --text: #111216;
+  --text-dim: #41454d;
+  --text-faint: #73787f;
+  --star-off: #a3a7ae;
+  --run: #2f5fcc;
+  --run-soft: rgba(47,95,204,.14);
 }
+:root[data-theme="light"] .p4 .star.on, :root[data-theme="light"] .stars-static.p4 { color: #3f9a3f; }
+:root[data-theme="light"] .p3 .star.on, :root[data-theme="light"] .stars-static.p3 { color: #23877b; }
+:root[data-theme="light"] .p2 .star.on, :root[data-theme="light"] .stars-static.p2 { color: #3f736b; }
+:root[data-theme="light"] .p1 .star.on, :root[data-theme="light"] .stars-static.p1 { color: #4f6461; }
 
 * { box-sizing: border-box; }
 /* Native controls default to the browser's blue; tie them to the accent. */
@@ -84,7 +88,10 @@ a { color: var(--accent); text-decoration: none; }
   background: var(--bg-elev);
 }
 .brand { font-weight: 700; letter-spacing: .3px; color: var(--accent); white-space: nowrap; }
-.topbar .search { flex: 1; max-width: 460px; }
+.search-wrap { position: relative; flex: 1; max-width: 460px; display: flex; }
+.search-wrap .ic { position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  color: var(--text-faint); pointer-events: none; }
+.search-wrap .search { flex: 1; padding-left: 30px; }
 .topbar .spacer { flex: 1; }
 .main { display: flex; flex: 1; min-height: 0; }
 
