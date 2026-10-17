@@ -42,6 +42,7 @@ async def meta():
         "contact_email": config.CONTACT_EMAIL,
         "tutorial_url": getattr(config, "TUTORIAL_URL", ""),
         "kofi_url": getattr(config, "KOFI_URL", ""),
+        "feedback_key": getattr(config, "FEEDBACK_KEY", ""),
     }
 
 # Module-level shared state: the launcher arms this and runs the watchdog thread.

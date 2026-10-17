@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.deps import get_db
 from db import queries
@@ -13,21 +13,21 @@ router = APIRouter(prefix="/api/tracks", tags=["tracks"])
 
 
 class TrackPatch(BaseModel):
-    is_checked: Optional[int] = None
-    is_revisit: Optional[int] = None
-    is_deleted: Optional[int] = None
-    is_owned: Optional[int] = None
-    notes: Optional[str] = None
+    is_checked: Optional[int] = Field(None, ge=0, le=1)
+    is_revisit: Optional[int] = Field(None, ge=0, le=1)
+    is_deleted: Optional[int] = Field(None, ge=0, le=1)
+    is_owned: Optional[int] = Field(None, ge=0, le=1)
+    notes: Optional[str] = Field(None, max_length=10_000)
     group: Optional[bool] = None  # apply to all copies in the merged group
 
 
 class BulkPatch(BaseModel):
-    ids: list[int]
-    is_checked: Optional[int] = None
-    is_revisit: Optional[int] = None
-    is_deleted: Optional[int] = None
-    is_owned: Optional[int] = None
-    notes: Optional[str] = None
+    ids: list[int] = Field(max_length=200_000)
+    is_checked: Optional[int] = Field(None, ge=0, le=1)
+    is_revisit: Optional[int] = Field(None, ge=0, le=1)
+    is_deleted: Optional[int] = Field(None, ge=0, le=1)
+    is_owned: Optional[int] = Field(None, ge=0, le=1)
+    notes: Optional[str] = Field(None, max_length=10_000)
     group: Optional[bool] = None  # apply to all copies in the merged group
 
 
@@ -58,8 +58,8 @@ async def list_tracks(
     run_id: Optional[int] = Query(None, description="show only tracks a saved run found new"),
     search: Optional[str] = None,
     sort: str = "priority_new_first",
-    limit: int = 500,
-    offset: int = 0,
+    limit: int = Query(500, ge=1, le=100_000),
+    offset: int = Query(0, ge=0),
     db=Depends(get_db),
 ):
     artist_ids = _parse_ids(artist_id)

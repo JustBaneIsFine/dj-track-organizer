@@ -16,7 +16,6 @@ function djApp() {
     filters: { status: "all", stars: [], type: "all", link: "all", showDeleted: false, showOwned: false, search: "" },
 
     // ui chrome
-    showOnboarding: false,
     showSettings: false,
     settingsTab: "scraping",
     settingsTabs: [
@@ -26,7 +25,6 @@ function djApp() {
       { key: "data", label: "Data" },
     ],
     showAbout: false,
-    showDisclaimer: false,
     meta: {},
     updateAvailable: null,
     showUpdateMenu: false,
@@ -35,6 +33,7 @@ function djApp() {
     confirmBox: null,   // { message, _resolve } - in-app confirm dialog
     logs: [],
     narrow: false,        // window narrow enough to drop the sidebar (see _watchNarrow)
+    bulkTight: false,     // bulk bar out of room, buttons go icon-only
     ctx: null,            // context menu { x, y, track }
     toasts: [],
     _toastId: 0,
@@ -49,13 +48,13 @@ function djApp() {
         try { this.meta = await api.meta(); } catch (e) {}
         await Promise.all([this.loadArtists(), this.loadTracks(), this.loadStats()]);
         await this.checkResumable();
-        if (this.settings.accepted_disclaimer !== "true") this.showDisclaimer = true;
-        else if (this.settings.onboarded !== "true" && !this.artists.length) this.showOnboarding = true;
+        this._openWelcome();
         this._checkUpdate();
       } catch (e) { this.toast("Startup error: " + e.message, "err"); }
       this._installKeyboard();
       this._watchNarrow();
       this._startHeartbeat();
+      this._initAnim();
       this.ready = true;
     },
 
@@ -70,18 +69,6 @@ function djApp() {
       window.addEventListener("beforeunload", () => {
         try { navigator.sendBeacon("/api/heartbeat?bye=1"); } catch (e) {}
       });
-    },
-
-    async finishOnboarding(openImport) {
-      try {
-        await api.patchSettings({
-          onboarded: "true",
-          browser_profile_path: this.settings.browser_profile_path || "",
-          source_url: this.settings.source_url || "",
-        });
-      } catch (e) {}
-      this.showOnboarding = false;
-      if (openImport) this.openImport();
     },
 
     theme: "dark",
@@ -102,6 +89,7 @@ function djApp() {
       this.accentListened = this.settings.accent_listened || "";
       this.accentRevisit = this.settings.accent_revisit || "#e0b84a";
       this._applyTheme();
+      this._applyAnim();
       this.filters.showDeleted = this.settings.show_deleted === "true";
       if (this.settings.show_reposts === "false") this.filters.type = "originals";
       try {
@@ -177,7 +165,7 @@ function djApp() {
       document.documentElement.dataset.theme = this.theme;
       const s = document.documentElement.style;
       // Bright accents wash out on the gray light theme, so text-ish uses get a darker shade.
-      const ink = (hex) => this.theme === "light" ? this._darken(hex, 0.72) : hex;
+      const ink = (hex) => this.theme === "light" ? this._darken(hex, 0.6) : hex;
       s.setProperty("--accent", ink(this.accent));
       s.setProperty("--accent-dim", this._darken(this.accent));
       s.setProperty("--accent-soft", this._rgba(this.accent, this.theme === "light" ? 0.2 : 0.14));
@@ -185,17 +173,33 @@ function djApp() {
       // Listened follows the accent unless the user picked a distinct colour.
       s.setProperty("--listened", ink(this.accentListened || this.accent));
       s.setProperty("--revisit", ink(this.accentRevisit || "#e0b84a"));
+      this._syncTitlebar();
     },
-    toggleTheme() {
-      this.theme = this.theme === "dark" ? "light" : "dark";
-      this.settings.theme = this.theme;          // keep in sync so Save won't revert
-      this._applyTheme();
-      api.patchSettings({ theme: this.theme }).catch(() => {});
+    // Native window only. pywebview's api may not be injected yet on first apply.
+    _syncTitlebar() {
+      const send = () => window.pywebview?.api?.set_dark_titlebar?.(this.theme !== "light")?.catch?.(() => {});
+      if (window.pywebview?.api) send();
+      else if (!this._tbWaiting) {
+        this._tbWaiting = true;
+        window.addEventListener("pywebviewready", () => this._syncTitlebar(), { once: true });
+      }
     },
-    setAccent(hex) {
-      this.accent = hex;
-      this.settings.accent_color = hex;          // keep in sync so Save won't revert
-      this._applyTheme();
+    toggleTheme(e) {
+      DJ.anim.reveal(e && e.currentTarget, () => {
+        this.theme = this.theme === "dark" ? "light" : "dark";
+        this.settings.theme = this.theme;          // keep in sync so Save won't revert
+        this._applyTheme();
+      });
+      api.patchSettings({ theme: this.theme === "dark" ? "light" : "dark" }).catch(() => {});
+    },
+    // e is passed from swatch clicks only; the color picker fires continuously.
+    setAccent(hex, e) {
+      const apply = () => {
+        this.accent = hex;
+        this.settings.accent_color = hex;          // keep in sync so Save won't revert
+        this._applyTheme();
+      };
+      if (e) DJ.anim.reveal(e.currentTarget, apply); else apply();
       api.patchSettings({ accent_color: hex }).catch(() => {});
     },
     setAccentListened(hex) {
@@ -234,7 +238,11 @@ function djApp() {
 
     // stats
     async loadStats() {
+      const hadNew = this.stats.new;
       try { this.stats = await api.getStats(); } catch (e) {}
+      if (hadNew > 0 && this.stats.new === 0) {
+        this.$nextTick(() => DJ.anim.burst(document.querySelector(".seg-bar")));
+      }
       await this._refreshChipStats();
     },
     // Chip counts reflect the selected artist(s) and open run; fall back to global otherwise.
@@ -259,13 +267,30 @@ function djApp() {
         const on = isNarrow && this.settings.narrow_hide_sidebar !== "false";
         if (on === this.narrow) return;
         this.narrow = on;
-        if (on) this._askNarrowPref();
+        if (on && !this.tour.active) this._askNarrowPref();
       };
       mq.addEventListener("change", (e) => apply(e.matches));
       // Some embedded webviews don't fire the media-query change event, so
       // watch plain resizes too (apply() ignores no-op calls).
       window.addEventListener("resize", () => apply(mq.matches));
       apply(mq.matches);
+    },
+    // Drop bulk-bar labels only when the full-width version would overflow.
+    _watchBulkbar(el) {
+      const fit = () => {
+        el.classList.remove("tight");
+        const over = el.scrollWidth > el.clientWidth + 1;
+        el.classList.toggle("tight", over);
+        this.bulkTight = over;
+      };
+      const refit = () => this.$nextTick(fit);
+      let w = 0;
+      new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; fit(); } }).observe(el);
+      this.$watch("selectedTrackIds", refit);
+      this.$watch("filters.showDeleted", refit);
+      this.$watch("filters.showOwned", refit);
+      this.$watch("undoStack", refit);
+      refit();
     },
     async _askNarrowPref() {
       if (this.settings.narrow_prompt_seen === "true") return;
@@ -316,14 +341,12 @@ function djApp() {
 
     // settings modal
     openSettings() { this.showSettings = true; },
-    openAbout() { this.showAbout = true; },
-
-    async acceptDisclaimer() {
-      this.showDisclaimer = false;
-      try { await api.patchSettings({ accepted_disclaimer: "true" }); } catch (e) {}
-      this.settings.accepted_disclaimer = "true";
-      if (this.settings.onboarded !== "true" && !this.artists.length) this.showOnboarding = true;
+    // Closing without Save drops the form edits; immediate-save controls are already on the server.
+    async closeSettings() {
+      this.showSettings = false;
+      try { this.settings = await api.getSettings(); } catch (e) {}
     },
+    openAbout() { this.showAbout = true; },
 
     async _checkUpdate() {
       if (this.settings.update_check === "false" || !this.meta.repo) return;
@@ -432,7 +455,7 @@ function djApp() {
         this.showSettings = false;
         this._applyUiFromSettings();
         this.loadTracks();
-      } catch (e) { this.toast(e.message, "err"); }
+      } catch (e) { this.toast(e.message.replace(/^\d+: /, ""), "err"); }
     },
     async doExport() {
       try {
@@ -451,13 +474,15 @@ function djApp() {
       reader.onload = async () => {
         if (!confirm("Restore from this backup? It replaces all current data.")) return;
         try {
-          const data = JSON.parse(reader.result);
+          let data;
+          try { data = JSON.parse(reader.result); }
+          catch (e) { throw new Error("That file is not a DJ Organizer backup."); }
           const r = await api.importAll(data);
           this.toast("Backup restored");
           this.settings = await api.getSettings();
           this._applyUiFromSettings();
           this.loadArtists(); this.loadTracks(); this.loadStats();
-        } catch (e) { this.toast("Import failed: " + e.message, "err"); }
+        } catch (e) { this.toast(e.message.replace(/^\d+: /, ""), "err"); }
       };
       reader.readAsText(file);
       ev.target.value = "";
@@ -492,9 +517,21 @@ function djApp() {
           if (e.key === "Enter") { e.preventDefault(); this._confirmYes(); return; }
           if (e.key === "Escape") { e.preventDefault(); this._confirmNo(); return; }
         }
+        if (e.key === "Escape" && this.tour.active && !document.querySelector(".overlay")) { this.endTour(); return; }
         if (e.key === "/" && !typing) { e.preventDefault(); document.getElementById("search")?.focus(); return; }
-        if (e.key === "Escape") { this.closeCtx(); if (this.showSettings || this.showLog) { this.showSettings = false; this.showLog = false; } else this.clearFilters(); return; }
+        if (e.key === "Escape") {
+          this.closeCtx();
+          if (this.showSettings) this.closeSettings();
+          else if (this.showLog) this.showLog = false;
+          else if (this.artistPanel) this.closeArtistPanel();
+          else if (this.showAbout) this.showAbout = false;
+          else if (this.showLayoutPanel) this.showLayoutPanel = false;
+          else if (!document.querySelector(".overlay")) this.clearFilters();
+          return;
+        }
         if (typing) return;
+        // Track shortcuts must not reach the list behind an open dialog.
+        if (!this.interactive && document.querySelector(".overlay")) return;
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && this.view === "tracks") {
           e.preventDefault(); this.selectAllVisible(); return;
         }
@@ -545,7 +582,10 @@ function djApp() {
     window.DJ.scrapeMixin,
     window.DJ.sessionMixin,
     window.DJ.ownedMixin,
-    window.DJ.layoutMixin
+    window.DJ.layoutMixin,
+    window.DJ.feedbackMixin,
+    window.DJ.animMixin,
+    window.DJ.tourMixin
   );
 }
 window.djApp = djApp;

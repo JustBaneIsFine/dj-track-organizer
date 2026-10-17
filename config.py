@@ -20,6 +20,8 @@ CONTACT_EMAIL = "djtezej@gmail.com"
 TUTORIAL_URL = "https://youtu.be/kowmLRPeob0"
 # Ko-fi page; empty hides the Support button.
 KOFI_URL = "https://ko-fi.com/djtezej"
+# Web3Forms access key for the feedback window; empty hides it. Public by design.
+FEEDBACK_KEY = "4d4c65cf-bce8-4af9-8d44-84e655016855"
 
 # Preferred port; main.py will fall through to PORT_FALLBACK_MAX if taken.
 PORT = 7331
@@ -28,8 +30,9 @@ HOST = "127.0.0.1"
 
 
 def app_dir() -> Path:
-    """User data directory: ~/.dj-organizer/  (created on first use)."""
-    d = Path.home() / f".{APP_NAME}"
+    """User data directory: ~/.dj-organizer/  (created on first use).
+    DJ_DATA_DIR points it elsewhere, for testing against a throwaway library."""
+    d = Path(os.environ["DJ_DATA_DIR"]) if os.environ.get("DJ_DATA_DIR") else Path.home() / f".{APP_NAME}"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -100,4 +103,6 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "update_chime": "false",        # sound when an update finds new tracks for an artist
     "saved_runs_keep": "5",         # how many past run results stay in "Recent results"
     "accepted_disclaimer": "false", # set true once the user accepts the first-run notice
+    "checklist": "",                # onboarding checklist: "" never offered, active, hidden
+    "animation_level": "",          # 0 off .. 3 all; empty = never changed, which means All
 }

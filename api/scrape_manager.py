@@ -24,7 +24,7 @@ from db import queries
 from db.schema import connect
 from scraper.anti_detection import TimingConfig
 from scraper.engine import ScrapeEngine, SessionControl, get_platform
-from scraper.platforms.soundcloud import normalize_artist_url
+from scraper.platforms.soundcloud import is_soundcloud_url, validate_artist_url
 
 # Sentinel pushed onto a Job's event queue when the run is fully finished.
 DONE = {"type": "__done__"}
@@ -79,16 +79,26 @@ class ScrapeManager:
         ``source_url`` is given, reuse the last saved list for that source instead
         of re-scraping the follow page. Returns the session id."""
         queue: list[dict] = []
+        if source_url and not artist_urls and not is_soundcloud_url(source_url):
+            raise ValueError(f"Not a SoundCloud link: {source_url.strip()[:80]}")
         if artist_urls:
+            bad = []
             for u in artist_urls:
                 u = u.strip()
                 if not u:
                     continue
-                url = normalize_artist_url(u)
+                try:
+                    url = validate_artist_url(u)
+                except ValueError:
+                    bad.append(u[:60])
+                    continue
                 name = url.rstrip("/").split("/")[-1] or url
                 queue.append(
                     {"url": url, "name": name, "status": "pending", "artist_id": None}
                 )
+            if bad:
+                more = f" and {len(bad) - 3} more" if len(bad) > 3 else ""
+                raise ValueError("Not SoundCloud artists: " + ", ".join(bad[:3]) + more)
         elif source_url and not rescan:
             # Reuse the previously discovered list - go straight into review.
             prev = await queries.latest_queue_for_source(conn, source_url)
@@ -290,7 +300,7 @@ class ScrapeManager:
             # Early-stop config: stop scraping an artist once we hit known tracks.
             stop_on_known = str(settings.get("scrape_stop_on_known", "true")).lower() == "true"
             try:
-                stop_after = int(settings.get("scrape_stop_known_count", 5))
+                stop_after = max(1, int(settings.get("scrape_stop_known_count", 5)))
             except (TypeError, ValueError):
                 stop_after = 5
 
@@ -649,7 +659,10 @@ class ScrapeManager:
         """Resolve effective (include_reposts, repost_limit) for an artist,
         honouring the -1 'inherit global' sentinel on both fields."""
         global_inc = str(settings.get("include_reposts_default", "false")).lower() == "true"
-        global_lim = int(settings.get("repost_limit_default", 30))
+        try:
+            global_lim = max(0, int(settings.get("repost_limit_default", 30)))
+        except (TypeError, ValueError):
+            global_lim = 30
 
         ir = artist["include_reposts"]
         inc = global_inc if ir == -1 else bool(ir)

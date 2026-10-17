@@ -6,6 +6,7 @@ window.DJ.scrapeMixin = {
   importMode: "interactive",
   importSourceUrl: "",
   importPasted: "",
+  importError: "",
 
   // live run state
   run: null, // { sid, active, total, index, currentName, processed, skipped, added, paused, captcha, whatsNew, errors }
@@ -15,6 +16,7 @@ window.DJ.scrapeMixin = {
 
   openImport() {
     this.importSourceUrl = this.settings.source_url || "";
+    this.importError = "";
     this.showImport = true;
   },
 
@@ -25,13 +27,13 @@ window.DJ.scrapeMixin = {
     else if (this.importSourceUrl.trim()) {
       body.source_url = this.importSourceUrl.trim();
       api.patchSettings({ source_url: body.source_url }).catch(() => {});
-    } else { this.toast("Paste a source URL or artist URLs", "warn"); return; }
+    } else { this.importError = "Paste a source URL or artist URLs"; return; }
 
-    this.showImport = false;
     try {
       const r = await api.startImport(body);
+      this.showImport = false;
       this._beginRun(r.session_id, this.importMode === "interactive");
-    } catch (e) { this.toast(e.message, "err"); }
+    } catch (e) { this.importError = e.message.replace(/^\d+: /, ""); }
   },
 
   async runUpdate(mode, artistIds, notesQuery) {

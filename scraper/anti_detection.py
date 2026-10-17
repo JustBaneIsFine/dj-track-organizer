@@ -36,7 +36,7 @@ class TimingConfig:
     def from_settings(cls, s: dict) -> "TimingConfig":
         def i(key: str, default: int) -> int:
             try:
-                return int(s.get(key, default))
+                return max(0, int(s.get(key, default)))
             except (TypeError, ValueError):
                 return default
 

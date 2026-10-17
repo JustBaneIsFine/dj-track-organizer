@@ -54,19 +54,23 @@ if getattr(sys, "frozen", False) and sys.stdout is None:
 from db.schema import connect, init_db
 
 
-def _stored_open_mode() -> str:
-    """Read the persisted 'open_mode' setting (native | browser); default native."""
+def _stored_setting(key: str, default: str) -> str:
     async def _read() -> str:
         conn = await connect()
         try:
             from db import queries  # local import keeps --init-only lean
-            return await queries.get_setting(conn, "open_mode", "native")
+            return await queries.get_setting(conn, key, default)
         finally:
             await conn.close()
     try:
-        return (asyncio.run(_read()) or "native").lower()
+        return (asyncio.run(_read()) or default).lower()
     except Exception:
-        return "native"
+        return default
+
+
+def _stored_open_mode() -> str:
+    """Read the persisted 'open_mode' setting (native | browser); default native."""
+    return _stored_setting("open_mode", "native")
 
 
 def _find_free_port() -> int:
@@ -188,6 +192,8 @@ def main() -> None:
         _run_browser()
         return
 
+    import titlebar  # noqa: WPS433
+    js_api = titlebar.JsApi()
     window = webview.create_window(
         "DJ Organizer",
         html=_splash_html(),       # paints immediately, no server dependency
@@ -195,7 +201,12 @@ def main() -> None:
         height=820,
         min_size=(460, 560),
         maximized=True,
+        js_api=js_api,
     )
+    js_api.attach(window)
+    # The page re-applies this on load and on every theme toggle.
+    dark = _stored_setting("theme", "dark") != "light"
+    window.events.shown += lambda: titlebar.set_dark(window, dark)
     # Let the folder picker use pywebview's dialog (GUI-thread safe) instead of tkinter.
     import folder_pick  # noqa: WPS433
     folder_pick.set_webview_window(window)

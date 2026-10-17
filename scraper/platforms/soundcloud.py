@@ -13,6 +13,7 @@ Pages used:
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from urllib.parse import urlsplit, urlunsplit
 
@@ -74,6 +75,49 @@ def normalize_artist_url(url: str) -> str:
     segs = [s for s in parts.path.split("/") if s]
     user = segs[0] if segs else ""
     return f"{BASE}/{user}"
+
+
+_SC_HOSTS = {"soundcloud.com", "www.soundcloud.com", "m.soundcloud.com"}
+# First path segments that are SoundCloud's own pages, not profiles.
+_RESERVED = {
+    "discover", "search", "stream", "feed", "you", "upload", "charts", "settings",
+    "messages", "notifications", "pages", "pro", "mobile", "people", "tags", "stations",
+    "signin", "logout", "jobs", "imprint", "terms-of-use", "popular", "for-artists",
+    "artists", "home", "playlists", "sets", "likes",
+}
+_USER_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def is_soundcloud_url(url: str) -> bool:
+    raw = (url or "").strip()
+    full = raw if "://" in raw else "https://" + raw
+    p = urlsplit(full)
+    return p.scheme in ("http", "https") and (p.hostname or "").lower() in _SC_HOSTS
+
+
+def validate_artist_url(url: str) -> str:
+    """normalize_artist_url for typed input: raises ValueError instead of guessing."""
+    raw = (url or "").strip()
+    if not raw:
+        raise ValueError("Enter a SoundCloud artist link or username.")
+    short = raw[:80]
+    looks_like_link = "://" in raw or "." in raw.split("/")[0]
+    if looks_like_link:
+        full = raw if "://" in raw else "https://" + raw
+        host = (urlsplit(full).hostname or "").lower()
+        if host == "on.soundcloud.com":
+            raise ValueError("Share links (on.soundcloud.com) can't be added. Open it and copy the profile address.")
+        if not is_soundcloud_url(raw):
+            raise ValueError(f"Not a SoundCloud link: {short}")
+        segs = [x for x in urlsplit(full).path.split("/") if x]
+        user = segs[0] if segs else ""
+    else:
+        user = raw.strip("/").split("/")[0].split("?")[0]
+    if not user:
+        raise ValueError(f"That link has no artist in it: {short}")
+    if not _USER_RE.match(user) or user.lower() in _RESERVED:
+        raise ValueError(f"Not a SoundCloud artist: {short}")
+    return f"{BASE}/{user.lower()}"  # profile URLs are case-insensitive
 
 
 def _strip(url: str) -> str:

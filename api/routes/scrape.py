@@ -5,9 +5,9 @@ import asyncio
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.deps import get_db
 from api.scrape_manager import DONE, manager
@@ -26,25 +26,28 @@ class ImportBody(BaseModel):
 class UpdateBody(BaseModel):
     mode: str = "full"  # 'full' | 'priority' | 'selected' | 'single' | 'notes'
     artist_ids: Optional[list[int]] = None
-    threshold: Optional[int] = None
+    threshold: Optional[int] = Field(None, ge=0, le=4)
     notes_query: Optional[str] = None  # for mode='notes': only artists whose notes match
 
 
 class DecisionBody(BaseModel):
     action: str = "add"            # 'add' | 'skip'
-    priority: int = 0
+    priority: int = Field(0, ge=0, le=4)
     aliases: list[str] = []
-    notes: str = ""
+    notes: str = Field("", max_length=10_000)
     scrape: bool = True            # False = add to library now, scrape later
     skip_all_unstarred: bool = False
 
 
 @router.post("/import")
 async def start_import(body: ImportBody, db=Depends(get_db)):
-    sid = await manager.start_import(
-        db, mode=body.mode, source_url=body.source_url,
-        artist_urls=body.artist_urls, rescan=body.rescan,
-    )
+    try:
+        sid = await manager.start_import(
+            db, mode=body.mode, source_url=body.source_url,
+            artist_urls=body.artist_urls, rescan=body.rescan,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {"session_id": sid}
 
 
@@ -158,5 +161,5 @@ async def sessions(db=Depends(get_db)):
 
 
 @router.get("/log")
-async def log(limit: int = 100, db=Depends(get_db)):
+async def log(limit: int = Query(100, ge=1, le=10_000), db=Depends(get_db)):
     return await queries.list_logs(db, limit=limit)

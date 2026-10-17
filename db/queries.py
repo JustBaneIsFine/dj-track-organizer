@@ -87,22 +87,35 @@ async def backfill_group_keys(conn: aiosqlite.Connection) -> None:
     await conn.commit()
 
 
+def _in_list(col: str) -> str:
+    """`col IN (...)` with the whole list bound as one JSON parameter, so SQLite's
+    host-parameter limit (32766) never applies to big selections."""
+    return f"{col} IN (SELECT value FROM json_each(?))"
+
+
+_ESC = "ESCAPE '\\'"
+
+
+def _like(s: str) -> str:
+    """LIKE pattern matching ``s`` literally (% and _ are not wildcards)."""
+    s = s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{s}%"
+
+
 async def _expand_group_ids(conn: aiosqlite.Connection, ids: list[int]) -> list[int]:
     """Expand track ids to every row sharing their group_key (for group-wide
     actions on a merged row). Rows with NULL group_key expand to just themselves."""
     if not ids:
         return ids
-    ph = ",".join("?" * len(ids))
     async with conn.execute(
-        f"SELECT DISTINCT group_key FROM tracks WHERE id IN ({ph}) AND group_key IS NOT NULL",
-        ids,
+        f"SELECT DISTINCT group_key FROM tracks WHERE {_in_list('id')} AND group_key IS NOT NULL",
+        (json.dumps(ids),),
     ) as cur:
         keys = [r["group_key"] for r in await cur.fetchall()]
     if not keys:
         return list(ids)
-    kph = ",".join("?" * len(keys))
     async with conn.execute(
-        f"SELECT id FROM tracks WHERE group_key IN ({kph})", keys
+        f"SELECT id FROM tracks WHERE {_in_list('group_key')}", (json.dumps(keys),)
     ) as cur:
         members = [r["id"] for r in await cur.fetchall()]
     return list(set(ids) | set(members))
@@ -117,9 +130,8 @@ async def artist_ids_for_tracks(
     if not track_ids:
         return []
     ids = await _expand_group_ids(conn, track_ids) if propagate_group else list(track_ids)
-    ph = ",".join("?" * len(ids))
     async with conn.execute(
-        f"SELECT DISTINCT artist_id FROM tracks WHERE id IN ({ph})", ids
+        f"SELECT DISTINCT artist_id FROM tracks WHERE {_in_list('id')}", (json.dumps(ids),)
     ) as cur:
         return [r["artist_id"] for r in await cur.fetchall()]
 
@@ -212,12 +224,12 @@ async def list_artists(
         # find by name, alias, or notes. Notes match by WORD: every word in the
         # query must appear (any order, any separators), so "Baile, Jersey" finds
         # notes written "Baile,House,Jersey".
-        ors = ["a.name LIKE ?", "a.aliases LIKE ?"]
-        params.extend([f"%{search}%", f"%{search}%"])
+        ors = [f"a.name LIKE ? {_ESC}", f"a.aliases LIKE ? {_ESC}"]
+        params.extend([_like(search), _like(search)])
         terms = notes_terms(search)
         if terms:
-            ors.append("(" + " AND ".join(["LOWER(a.notes) LIKE ?"] * len(terms)) + ")")
-            params.extend([f"%{t}%" for t in terms])
+            ors.append("(" + " AND ".join([f"LOWER(a.notes) LIKE ? {_ESC}"] * len(terms)) + ")")
+            params.extend([_like(t) for t in terms])
         where.append("(" + " OR ".join(ors) + ")")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
@@ -426,11 +438,11 @@ async def list_tracks(
         where.append(f"a.priority IN ({','.join('?' * len(priority_in))})")
         params.extend(priority_in)
     if track_ids:
-        where.append(f"t.id IN ({','.join('?' * len(track_ids))})")
-        params.extend(track_ids)
+        where.append(_in_list("t.id"))
+        params.append(json.dumps(track_ids))
     if search:
-        where.append("(t.name LIKE ? OR a.name LIKE ?)")
-        params.extend([f"%{search}%", f"%{search}%"])
+        where.append(f"(t.name LIKE ? {_ESC} OR a.name LIKE ? {_ESC})")
+        params.extend([_like(search), _like(search)])
 
     order = {
         "priority_new_first": "a.priority DESC, t.added_at DESC",
@@ -534,11 +546,11 @@ async def count_tracks(
         where.append(f"a.priority IN ({','.join('?' * len(priority_in))})")
         params.extend(priority_in)
     if track_ids:
-        where.append(f"t.id IN ({','.join('?' * len(track_ids))})")
-        params.extend(track_ids)
+        where.append(_in_list("t.id"))
+        params.append(json.dumps(track_ids))
     if search:
-        where.append("(t.name LIKE ? OR a.name LIKE ?)")
-        params.extend([f"%{search}%", f"%{search}%"])
+        where.append(f"(t.name LIKE ? {_ESC} OR a.name LIKE ? {_ESC})")
+        params.extend([_like(search), _like(search)])
     count_expr = (
         "COUNT(DISTINCT COALESCE(t.group_key, 't' || t.id))" if merge else "COUNT(*)"
     )
@@ -621,6 +633,8 @@ def _track_update_sets(fields: dict) -> tuple[list[str], list]:
         eff["is_checked"] = 0
     if eff.get("is_checked") == 1 and "is_revisit" not in eff:
         eff["is_revisit"] = 0
+    if eff.get("is_checked") == 1 and eff.get("is_revisit") == 1:
+        eff["is_checked"] = 0  # both asked for: revisit wins, it's the unfinished state
     sets, params = [], []
     for k, v in eff.items():
         sets.append(f"{k} = ?")
@@ -648,9 +662,8 @@ async def set_track_fields(
         return None
     # A merged row stands in for every copy of the song; apply to the whole group.
     ids = await _expand_group_ids(conn, [track_id]) if propagate_group else [track_id]
-    placeholders = ",".join("?" * len(ids))
     await conn.execute(
-        f"UPDATE tracks SET {', '.join(sets)} WHERE id IN ({placeholders})", params + ids
+        f"UPDATE tracks SET {', '.join(sets)} WHERE {_in_list('id')}", params + [json.dumps(ids)]
     )
     await conn.commit()
     async with conn.execute("SELECT * FROM tracks WHERE id = ?", (track_id,)) as cur:
@@ -666,10 +679,9 @@ async def bulk_set_tracks(
     if not sets:
         return 0
     ids = await _expand_group_ids(conn, track_ids) if propagate_group else track_ids
-    placeholders = ",".join("?" * len(ids))
-    params = base_params + ids
     cur = await conn.execute(
-        f"UPDATE tracks SET {', '.join(sets)} WHERE id IN ({placeholders})", params
+        f"UPDATE tracks SET {', '.join(sets)} WHERE {_in_list('id')}",
+        base_params + [json.dumps(list(ids))],
     )
     await conn.commit()
     return cur.rowcount
@@ -750,12 +762,13 @@ async def add_owned_rejections(
     if not pairs:
         return 0
     ts = now_iso()
-    await conn.executemany(
-        "INSERT OR IGNORE INTO owned_rejections (track_id, filename, created_at) VALUES (?, ?, ?)",
-        [(tid, fn, ts) for tid, fn in pairs if tid and fn],
+    cur = await conn.executemany(
+        "INSERT OR IGNORE INTO owned_rejections (track_id, filename, created_at) "
+        "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM tracks WHERE id = ?)",
+        [(tid, fn, ts, tid) for tid, fn in pairs if tid and fn],
     )
     await conn.commit()
-    return len(pairs)
+    return max(cur.rowcount, 0)
 
 
 async def get_owned_rejections(
@@ -765,9 +778,8 @@ async def get_owned_rejections(
     if track_ids is not None:
         if not track_ids:
             return {}
-        placeholders = ",".join("?" * len(track_ids))
-        sql = f"SELECT track_id, filename FROM owned_rejections WHERE track_id IN ({placeholders})"
-        args = track_ids
+        sql = f"SELECT track_id, filename FROM owned_rejections WHERE {_in_list('track_id')}"
+        args = [json.dumps(track_ids)]
     else:
         sql = "SELECT track_id, filename FROM owned_rejections"
         args = []
@@ -1062,30 +1074,55 @@ _DELETE_ORDER = ("scrape_log", "import_sessions", "tracks", "artists", "settings
 _INSERT_ORDER = ("artists", "tracks", "import_sessions", "scrape_log", "settings")
 
 
+async def _table_columns(conn: aiosqlite.Connection, table: str) -> set[str]:
+    async with conn.execute(f"PRAGMA table_info({table})") as cur:
+        return {r["name"] for r in await cur.fetchall()}
+
+
 async def import_all(conn: aiosqlite.Connection, data: dict) -> dict:
-    """Restore from a JSON export: replace every present table's rows wholesale."""
-    counts: dict[str, int] = {}
-    for table in _DELETE_ORDER:
-        if data.get(table) is not None:
-            await conn.execute(f"DELETE FROM {table}")
+    """Restore from a JSON export: replace every present table's rows wholesale.
+
+    All or nothing, so a bad file leaves the library untouched. Columns this
+    version doesn't have are dropped, so a newer version's backup still loads.
+    Pass a connection nobody else writes on, or their commit lands mid-restore.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("not a backup file")
+    plan: dict[str, list[dict]] = {}
     for table in _INSERT_ORDER:
         rows = data.get(table)
         if rows is None:
             continue
-        for row in rows:
-            cols = list(row.keys())
-            placeholders = ",".join("?" * len(cols))
-            await conn.execute(
-                f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
-                [row[c] for c in cols],
-            )
-        counts[table] = len(rows)
-    await conn.commit()
-    return counts
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise ValueError(f"'{table}' is not a list of rows")
+        known = await _table_columns(conn, table)
+        plan[table] = [{k: v for k, v in r.items() if k in known} for r in rows]
+    if not plan:
+        raise ValueError("no library data in this file")
+
+    await conn.execute("BEGIN IMMEDIATE")
+    try:
+        for table in _DELETE_ORDER:
+            if table in plan:
+                await conn.execute(f"DELETE FROM {table}")
+        for table in _INSERT_ORDER:
+            for row in plan.get(table, []):
+                if not row:
+                    continue
+                cols = list(row)
+                await conn.execute(
+                    f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                    [row[c] for c in cols],
+                )
+        await conn.commit()
+    except Exception:
+        await conn.rollback()
+        raise
+    return {t: len(rows) for t, rows in plan.items()}
 
 
 async def reset_all(conn: aiosqlite.Connection) -> None:
     """Wipe all user data. Settings are cleared and re-seeded by the caller."""
-    for table in _DELETE_ORDER:
+    for table in ("run_results", "owned_rejections", *_DELETE_ORDER):
         await conn.execute(f"DELETE FROM {table}")
     await conn.commit()

@@ -60,6 +60,7 @@ async def _match_against_library(
     """
     if floor is None:
         floor = int(await queries.get_setting(db, "owned_match_floor", 90))
+    floor = min(100, max(0, floor))
     tracks = await queries.list_tracks(
         db, include_owned=True, limit=100000,
         artist_ids=[artist_id] if artist_id else None,

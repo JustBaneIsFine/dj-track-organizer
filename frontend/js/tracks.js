@@ -150,19 +150,93 @@ window.DJ.tracksMixin = {
     try { this.runResults = await api.runResults(); } catch (e) { this.runResults = []; }
   },
 
+  // Same query as last time = a refresh after a mark: leaving rows collapse, returning
+  // rows drop in. A new query (filter, sort, artist) fades the first rows in instead.
+  tracksLoaded: false,
+  _collapseStagger: 0,
   async loadTracks() {
+    const seq = (this._trkSeq = (this._trkSeq || 0) + 1);
+    const A = DJ.anim;
+    if (this._collapsing) { this._collapsing.forEach((a) => a.cancel()); this._collapsing = null; }
     this.tracksLoading = true;
     try {
-      const r = await api.listTracks(this._trackQuery());
+      const q = this._trackQuery();
+      const r = await api.listTracks(q);
+      if (seq !== this._trkSeq) return;
+      const key = JSON.stringify(q);
+      const same = this.tracksLoaded && key === this._trkKey;
+      this._trkKey = key;
+      const list = document.querySelector(".track-list");
+      const prevIds = new Set(this.tracks.map((t) => t.id));
+      if (same) {
+        const next = new Set(r.items.map((t) => t.id));
+        const gone = A.visibleRows(list, ".track[data-k]").filter((el) => !next.has(+el.dataset.k));
+        const step = gone.length > 1 ? Math.min(this._collapseStagger, 900 / gone.length) : 0;
+        this._collapsing = A.collapse(gone, step);
+        await A.settle(this._collapsing);
+        if (seq !== this._trkSeq) return;
+        this._collapsing = null;
+      }
+      this._collapseStagger = 0;
       this.tracks = r.items;
       this.tracksTotal = r.total;
+      this.tracksLoaded = true;
       // Selection refers to the previous view; clear it on (re)load.
       this.selectedTrackIds = [];
       this._selectAnchor = null;
       if (this.focusedIndex >= this.tracks.length) this.focusedIndex = this.tracks.length - 1;
       this._refreshChipStats();  // keep chip counts in sync with the artist selection
+      this.$nextTick(() => {
+        if (same) {
+          const added = r.items.filter((t) => !prevIds.has(t.id));
+          if (added.length && added.length <= 10) {
+            for (const t of added) A.expand(list.querySelector(`.track[data-k="${t.id}"]`), { drop: true });
+          }
+        } else {
+          A.cascade(A.visibleRows(list, ".track[data-k]"));
+        }
+      });
     } catch (e) { this.toast(e.message, "err"); }
-    this.tracksLoading = false;
+    finally { if (seq === this._trkSeq) this.tracksLoading = false; }
+  },
+
+  // Empty-state chips: one per active filter, each clears only itself.
+  activeFilterChips() {
+    const f = this.filters, out = [];
+    const names = { new: "New", listened: "Listened", revisit: "Revisit", originals: "Originals",
+      reposts: "Reposts", free: "Free", buy: "Buy" };
+    if (this.runSet) out.push({ key: "run", label: this.runSet.label || "Update results" });
+    if (f.status !== "all") out.push({ key: "status", label: names[f.status] || f.status });
+    if (f.type !== "all") out.push({ key: "type", label: names[f.type] || f.type });
+    if (f.link !== "all") out.push({ key: "link", label: names[f.link] || f.link });
+    if (f.stars && f.stars.length) {
+      const lv = [...f.stars].sort().map((n) => n === 0 ? "none" : n);
+      out.push({ key: "stars", label: "Stars: " + lv.join(", ") });
+    }
+    for (const id of this.selectedArtistIds) {
+      const a = this.artists.find((x) => x.id === id);
+      out.push({ key: "artist", arg: id, label: a ? a.name : "Artist" });
+    }
+    if (f.search.trim()) out.push({ key: "search", label: "“" + f.search.trim() + "”" });
+    if (f.showOwned) out.push({ key: "owned", label: "Owned only" });
+    if (f.showDeleted) out.push({ key: "deleted", label: "Deleted only" });
+    return out;
+  },
+  removeFilterChip(c) {
+    const f = this.filters;
+    switch (c.key) {
+      case "run": return this.clearRunSet();
+      case "status": f.status = "all"; break;
+      case "type": f.type = "all"; break;
+      case "link": f.link = "all"; break;
+      case "stars": f.stars = []; break;
+      case "artist": this.selectedArtistIds = this.selectedArtistIds.filter((x) => x !== c.arg); break;
+      case "search": f.search = ""; break;
+      case "owned": f.showOwned = false; break;
+      case "deleted": f.showDeleted = false; this.loadArtists(); break;
+    }
+    this.reload();
+    this._refreshChipStats();
   },
 
   isSelected(id) { return this.selectedTrackIds.includes(id); },
@@ -191,7 +265,19 @@ window.DJ.tracksMixin = {
     const list = resp && resp.affected_artists;
     if (!list || !list.length) return;
     const byId = new Map(list.map((a) => [a.id, a]));
-    this.artists = this.artists.map((a) => byId.get(a.id) || a);
+    const finished = [];
+    this.artists = this.artists.map((a) => {
+      const n = byId.get(a.id);
+      if (!n) return a;
+      const was = a.tracks_total && (a.new_count || a.revisit_count);
+      const now = n.tracks_total && !n.new_count && !n.revisit_count;
+      if (was && now && DJ.anim.on(2)) { finished.push(n.id); return { ...n, _fin: true }; }
+      return n;
+    });
+    // Just finished: the bar fills to 100%, then "all heard" pops in.
+    if (finished.length) setTimeout(() => {
+      for (const a of this.artists) if (finished.includes(a.id)) { a._fin = false; a._pop = true; }
+    }, 550);
     if (this.artistPanel && byId.has(this.artistPanel.id)) {
       this.artistPanel = { ...this.artistPanel, ...byId.get(this.artistPanel.id) };
     }
@@ -269,7 +355,11 @@ window.DJ.tracksMixin = {
     const useDl = this.openDownloadLink && this.filters.status === "revisit" && t.purchase_url;
     return useDl ? this._unwrapDl(t.purchase_url) : t.url;
   },
-  openTrack(t) { const u = this._openUrlFor(t); if (u) window.open(u, "_blank"); },
+  openTrack(t) {
+    const u = this._openUrlFor(t);
+    if (u) window.open(u, "_blank");
+    if (this.tour && this.tour.active) this.tour.opened = true;
+  },
   // "Go to artist": filter the sidebar to just this artist (by name) so they're easy
   // to find, and scope the track list to them. (Merged rows have no single artist.)
   goToArtist(t) {
@@ -293,10 +383,11 @@ window.DJ.tracksMixin = {
   },
   copyLink(t) { if (t.url) navigator.clipboard?.writeText(t.url); this.toast("Link copied"); this.closeCtx(); },
 
-  async bulk(fields) {
+  async bulk(fields, afterSnapshot) {
     if (!this.selectedTrackIds.length) return;
     const sel = new Set(this.selectedTrackIds);
     this._pushUndo(this.tracks.filter((t) => sel.has(t.id)), this._merged(), "bulk change");
+    if (afterSnapshot) afterSnapshot(sel);
     const ids = [...this.selectedTrackIds];
     try {
       const r = await api.bulkTracks({ ids, group: this._merged(), ...fields });
@@ -306,7 +397,17 @@ window.DJ.tracksMixin = {
       if (this.runSet) await this._runSetRefresh(); else this.loadTracks();
     } catch (e) { this.toast(e.message, "err"); }
   },
-  bulkListened() { this.bulk({ is_checked: 1 }); },
+  // Checks tick, then the rows leave one by one.
+  bulkListened() {
+    if (!DJ.anim.on(2)) return this.bulk({ is_checked: 1 });
+    this._collapseStagger = 90;
+    this.bulk({ is_checked: 1 }, (sel) => {
+      for (const id of sel) {
+        DJ.anim.fx(document.querySelector(`.track[data-k="${id}"] .mark.heard:not(.on) .chk`), "fx-draw");
+      }
+      for (const t of this.tracks) if (sel.has(t.id)) { t.is_checked = 1; t.is_revisit = 0; }
+    });
+  },
   bulkRevisit() { this.bulk({ is_revisit: 1 }); },
   bulkUnlistened() { this.bulk({ is_checked: 0 }); },
   bulkDelete() { this.bulk({ is_deleted: 1 }); },

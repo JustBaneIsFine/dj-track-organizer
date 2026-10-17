@@ -76,6 +76,10 @@ are to SoundCloud while scraping, and a once-per-launch check to GitHub for a ne
 release (you can turn that off in Settings). Your database, logs, and browser profile
 stay in `~/.dj-organizer/` and are never uploaded.
 
+The feedback window sends only when you press Send. It sends your message, the app
+version, your OS, and your email if you typed one, via [Web3Forms](https://web3forms.com)
+to the developer's inbox.
+
 ## Scraping notes
 
 Defaults are deliberately slow: random delays between artists, one request at a time,
@@ -138,4 +142,4 @@ with, authorized, or endorsed by SoundCloud.
 
 ## Support
 
-The app is free. Tips go to [Ko-fi](https://ko-fi.com/djtezej).
+The app is free. Tips on [Ko-fi](https://ko-fi.com/djtezej) go toward keeping it maintained and building more useful apps.

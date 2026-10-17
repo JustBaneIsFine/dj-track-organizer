@@ -8,17 +8,57 @@ window.DJ.artistsMixin = {
   selectedArtistIds: [],
   artistPanel: null, // artist object shown in the detail flyout
 
-  async loadArtists() {
+  // Typing a filter keeps every artist on screen: matches move to the top, the rest
+  // stay below dimmed and inert. Rows glide to their new spots (FLIP).
+  // opts.sort staggers the glide, opts.glow highlights one row after it lands.
+  async loadArtists(opts = {}) {
+    const seq = (this._artSeq = (this._artSeq || 0) + 1);
+    const A = DJ.anim;
     try {
-      this.artists = await api.listArtists({
-        search: this.artistSearch || undefined,
-        include_deleted: this.filters.showDeleted,
-        sort: this.artistSort,
-        unscraped: this.artistUnscraped || undefined,
+      const base = { include_deleted: this.filters.showDeleted, sort: this.artistSort,
+        unscraped: this.artistUnscraped || undefined };
+      const q = this.artistSearch.trim();
+      let rows;
+      if (q) {
+        const [hits, all] = await Promise.all([api.listArtists({ ...base, search: q }), api.listArtists(base)]);
+        const ids = new Set(hits.map((a) => a.id));
+        rows = hits.concat(all.filter((a) => !ids.has(a.id)).map((a) => ({ ...a, _dim: true })));
+      } else {
+        rows = await api.listArtists(base);
+      }
+      if (seq !== this._artSeq) return;
+      const list = document.querySelector(".artist-list");
+      const next = new Set(rows.map((a) => a.id));
+      const had = new Set(this.artists.map((a) => a.id));
+      const added = rows.filter((a) => !had.has(a.id)).length;
+      const gone = A.visibleRows(list, ".artist[data-k]").filter((el) => !next.has(+el.dataset.k));
+      if (gone.length && gone.length <= 3) {
+        const anims = A.collapse(gone);
+        await A.settle(anims);
+        if (seq !== this._artSeq) { anims.forEach((a) => a.cancel()); return; }
+      }
+      const fresh = had.size > 0 && added <= 3;
+      await A.flip(list, ".artist[data-k]", () => { this.artists = rows; }, {
+        stagger: opts.sort ? 60 : 0,
+        onAdd: (el) => { if (fresh) A.expand(el, { flash: true }); },
       });
+      if (opts.glow) A.glow(list && list.querySelector(`.artist[data-k="${opts.glow}"]`));
     } catch (e) { this.toast(e.message, "err"); }
   },
+  artistMatchCount() { return this.artists.filter((a) => !a._dim).length; },
   toggleUnscraped() { this.artistUnscraped = !this.artistUnscraped; this.loadArtists(); },
+
+  artistFilterChips() {
+    const out = [];
+    if (this.artistSearch.trim()) out.push({ key: "search", label: "“" + this.artistSearch.trim() + "”" });
+    if (this.artistUnscraped) out.push({ key: "unscraped", label: "Never updated" });
+    return out;
+  },
+  removeArtistChip(c) {
+    if (c.key === "search") this.artistSearch = "";
+    if (c.key === "unscraped") this.artistUnscraped = false;
+    this.loadArtists();
+  },
 
   artistFilterActive(id) { return this.selectedArtistIds.includes(id); },
   filterByArtist(a, additive) {
@@ -40,7 +80,11 @@ window.DJ.artistsMixin = {
   async setPriority(a, n) {
     const nv = a.priority === n ? 0 : n; // click active star to clear
     a.priority = nv;
-    try { await api.patchArtist(a.id, { priority: nv }); this.loadStats(); }
+    try {
+      await api.patchArtist(a.id, { priority: nv });
+      this.loadStats();
+      if (this.artistSort.startsWith("priority")) this.loadArtists({ glow: a.id });
+    }
     catch (e) { this.toast(e.message, "err"); this.loadArtists(); }
   },
 
@@ -88,10 +132,10 @@ window.DJ.artistsMixin = {
     try {
       const a = await api.addArtist({ url });
       this.addArtistUrl = ""; this.showAddArtist = false;
-      this.loadArtists();
+      this.loadArtists(); this.loadStats();
       if (scrapeNow) this.runUpdate("single", [a.id]);
       else this.toast(`Added ${a.name}`);
-    } catch (e) { this.toast(e.message, "err"); }
+    } catch (e) { this.toast(e.message.replace(/^\d+: /, ""), "err"); }
   },
 
   // [⟳] update a single artist. If a background update is already running, add this
