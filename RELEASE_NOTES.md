@@ -1,4 +1,6 @@
-## v0.2.0.1
+## v0.2.1
 
-- Fixed the Appearance, General and Data tabs in Settings showing nothing but the Close and Save buttons.
-- Update results now have their own color, a note and a larger Exit button. The filters work inside them, and the view closes once everything in it is reviewed.
+- Added an optional chime that plays when an update finds new tracks. It is off by default and can be turned on under Settings, Updating.
+- Track rows now show Free and Buy pills when the track has a download or purchase link.
+- The tutorial button opens the new overview video.
+- New overview video: https://youtu.be/kowmLRPeob0
