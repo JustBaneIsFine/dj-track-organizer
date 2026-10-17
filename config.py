@@ -18,6 +18,8 @@ GITHUB_REPO = "JustBaneIsFine/dj-track-organizer"
 CONTACT_EMAIL = "djtezej@gmail.com"
 # Tutorial video; empty hides the About button until there is one.
 TUTORIAL_URL = "https://youtu.be/kowmLRPeob0"
+# Ko-fi page; empty hides the Support button.
+KOFI_URL = "https://ko-fi.com/djtezej"
 
 # Preferred port; main.py will fall through to PORT_FALLBACK_MAX if taken.
 PORT = 7331

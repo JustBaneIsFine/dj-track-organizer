@@ -110,6 +110,7 @@
     <button @click="toggleTheme()" :title="theme==='dark' ? 'Switch to light' : 'Switch to dark'"
             x-text="theme==='dark' ? '☀' : '☾'"></button>
     <button @click="openLayoutPanel()" title="Customize the compact layout">▤</button>
+    <button x-show="meta.kofi_url" x-cloak @click="window.open(meta.kofi_url, '_blank')" title="Support on Ko-fi">♡</button>
     <button @click="openAbout()" title="About & links">ⓘ</button>
     <button @click="openSettings()">⚙</button>
   </div>
@@ -496,6 +497,13 @@
             <button x-show="meta.issues_url" @click="window.open(meta.issues_url, '_blank')">Report a bug ↗</button>
             <button x-show="meta.github_url" @click="window.open(meta.github_url + '#contact', '_blank')">Contact</button>
           </div>
+          <template x-if="meta.kofi_url">
+            <div>
+              <div class="section-label">Support</div>
+              <div class="muted" style="font-size:12px">Free and open source. Tips go toward keeping it maintained.</div>
+              <button style="margin-top:8px" @click="window.open(meta.kofi_url, '_blank')">☕ Buy me a coffee on Ko-fi ↗</button>
+            </div>
+          </template>
           <div class="muted" style="font-size:11px; margin-top:10px">
             MIT licensed · Use at your own risk · Not affiliated with SoundCloud
           </div>

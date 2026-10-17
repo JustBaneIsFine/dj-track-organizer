@@ -134,3 +134,7 @@ with, authorized, or endorsed by SoundCloud.
 
 - **Email:** djtezej@gmail.com
 - **Bug reports & feature requests:** [open an issue](https://github.com/JustBaneIsFine/dj-track-organizer/issues/new)
+
+## Support
+
+The app is free. Tips go to [Ko-fi](https://ko-fi.com/djtezej).
