@@ -79,7 +79,7 @@ window.DJ.tracksMixin = {
     if (f.status === "revisit") q.is_revisit = 1;
     if (f.type === "originals") q.is_repost = 0;
     if (f.type === "reposts") q.is_repost = 1;
-    if (f.link === "free" || f.link === "buy") q.link = f.link;
+    if (["free", "buy", "unknown"].includes(f.link)) q.link = f.link;
     if (f.stars && f.stars.length) q.priority_in = f.stars.join(",");
     if (f.showDeleted) q.is_deleted = 1;  // show ONLY deleted
     if (f.showOwned) q.is_owned = 1;      // show ONLY owned
@@ -204,7 +204,7 @@ window.DJ.tracksMixin = {
   activeFilterChips() {
     const f = this.filters, out = [];
     const names = { new: "New", listened: "Listened", revisit: "Revisit", originals: "Originals",
-      reposts: "Reposts", free: "Free", buy: "Buy" };
+      reposts: "Reposts", free: "Free", buy: "Buy", unknown: "Unknown" };
     if (this.runSet) out.push({ key: "run", label: this.runSet.label || "Update results" });
     if (f.status !== "all") out.push({ key: "status", label: names[f.status] || f.status });
     if (f.type !== "all") out.push({ key: "type", label: names[f.type] || f.type });
@@ -350,10 +350,12 @@ window.DJ.tracksMixin = {
     return url;
   },
   // Which URL a track opens: in the revisit view with the toggle on, prefer the
-  // download/buy link when the track has one; otherwise the SoundCloud page.
+  // download/buy link when the track has one; otherwise the SoundCloud page. A store
+  // link loses to SoundCloud's own download, which lives on the track page.
   _openUrlFor(t) {
-    const useDl = this.openDownloadLink && this.filters.status === "revisit" && t.purchase_url;
-    return useDl ? this._unwrapDl(t.purchase_url) : t.url;
+    const dl = this._freeLink(t) || (t.sc_download ? null : t.purchase_url);
+    const useDl = this.openDownloadLink && this.filters.status === "revisit" && dl;
+    return useDl ? this._unwrapDl(dl) : t.url;
   },
   openTrack(t) {
     const u = this._openUrlFor(t);
@@ -420,10 +422,14 @@ window.DJ.tracksMixin = {
   // the user can grab by hand. Paid-store links are treated like "no free download".
   _hasUsableDl(t) { return this.linkKind(t) === "free"; },
   // "free" | "buy" | null. Shared by the row pill and the copy button; LINK_SQL in
-  // db/queries.py applies the same rule for the Free / Buy chips.
+  // db/queries.py applies the same rule for the Free / Buy / Unknown chips.
   linkKind(t) {
-    if (!t.purchase_url) return null;
-    return /bandcamp\.com|beatport\.com/i.test(t.purchase_url) ? "buy" : "free";
+    if (t.sc_download || this._freeLink(t)) return "free";
+    return t.purchase_url ? "buy" : null;
+  },
+  // The external free-download link, if the track has one (not a store).
+  _freeLink(t) {
+    return t.purchase_url && !/bandcamp\.com|beatport\.com/i.test(t.purchase_url) ? t.purchase_url : null;
   },
   // Selected revisit workflow: tracks with no buy link OR a Bandcamp buy link can't
   // be free-downloaded, so copy their SoundCloud URLs to the clipboard (one per line,

@@ -207,7 +207,7 @@ class ScrapeEngine:
         known_urls=None,
         stop_after: int = 0,
     ) -> ArtistScrapeResult:
-        """Scrape one artist. ``upsert_track`` is an async fn(name,url,is_repost,purchase_url)
+        """Scrape one artist. ``upsert_track`` is an async fn(name,url,is_repost,purchase_url,sc_download)
         returning the new track's id (falsy when the track already existed).
 
         ``on_progress(phase, count)`` (optional, async) is called with a running
@@ -247,7 +247,7 @@ class ScrapeEngine:
 
             result.tracks_found = len(tracks)
             for t in tracks:
-                tid = await upsert_track(t.name, t.url, 0, t.purchase_url)
+                tid = await upsert_track(t.name, t.url, 0, t.purchase_url, t.sc_download)
                 if tid:
                     result.tracks_added += 1
                     result.new_track_ids.append(tid)
@@ -263,7 +263,7 @@ class ScrapeEngine:
                 )
                 result.reposts_found = len(reposts)
                 for t in reposts:
-                    tid = await upsert_track(t.name, t.url, 1, t.purchase_url)
+                    tid = await upsert_track(t.name, t.url, 1, t.purchase_url, t.sc_download)
                     if tid:
                         result.tracks_added += 1
                         result.new_track_ids.append(tid)

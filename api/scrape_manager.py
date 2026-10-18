@@ -595,10 +595,11 @@ class ScrapeManager:
         })
         inc_reposts, repost_lim = await self._repost_opts(conn, artist, settings)
 
-        async def upsert(name, url, is_repost, purchase_url=None, _aid=artist["id"], _an=artist["name"]):
+        async def upsert(name, url, is_repost, purchase_url=None, sc_download=None,
+                         _aid=artist["id"], _an=artist["name"]):
             return await queries.upsert_track(
-                conn, artist_id=_aid, name=name, url=url,
-                is_repost=is_repost, purchase_url=purchase_url, artist_name=_an,
+                conn, artist_id=_aid, name=name, url=url, is_repost=is_repost,
+                purchase_url=purchase_url, sc_download=sc_download, artist_name=_an,
             )
 
         async def on_progress(phase, count, _idx=idx, _name=entry["name"]):
@@ -608,18 +609,21 @@ class ScrapeManager:
             })
 
         # Early-stop only kicks in when we already have tracks for this artist
-        # (a re-scrape); first-ever scrapes pull everything.
+        # (a re-scrape); first-ever scrapes pull everything. Artists that haven't had
+        # a full pass since the download flag landed get one, so older tracks are flagged.
+        full_pass = not stop_on_known or not artist.get("dl_checked")
         known_urls = (
-            await queries.track_urls_for_artist(conn, artist["id"])
-            if stop_on_known else None
+            None if full_pass else await queries.track_urls_for_artist(conn, artist["id"])
         )
         res = await eng.scrape_artist(
             artist, upsert_track=upsert,
             include_reposts=inc_reposts, repost_limit=repost_lim,
-            known_urls=known_urls, stop_after=(stop_after if stop_on_known else 0),
+            known_urls=known_urls, stop_after=(0 if full_pass else stop_after),
             on_progress=on_progress,
         )
         await conn.commit()
+        if full_pass and not res.error and res.tracks_found:
+            await queries.mark_dl_checked(conn, artist["id"])
         await queries.refresh_artist_cache(conn, artist["id"])
 
         if res.error:

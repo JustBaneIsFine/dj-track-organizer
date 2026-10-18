@@ -351,22 +351,29 @@ function djApp() {
     async _checkUpdate() {
       if (this.settings.update_check === "false" || !this.meta.repo) return;
       try {
-        const res = await fetch(`https://api.github.com/repos/${this.meta.repo}/releases/latest`,
+        const res = await fetch(`https://api.github.com/repos/${this.meta.repo}/releases?per_page=50`,
           { headers: { Accept: "application/vnd.github+json" } });
         if (!res.ok) return;
-        const rel = await res.json();
-        const latest = (rel.tag_name || "").replace(/^v/, "");
-        if (latest && this._verGreater(latest, this.meta.version || "0.0.0")) {
-          const { notes, video } = this._pullVideo(this._cleanNotes(rel.body || ""));
-          this.updateAvailable = {
-            version: latest,
-            notes,
-            notesHtml: this._notesHtml(notes),
-            video,
-            page: rel.html_url || this.meta.releases_url,
-            download: this.meta.download_url || rel.html_url || this.meta.releases_url,
-          };
-        }
+        const current = this.meta.version || "0.0.0";
+        // Every release since the installed one, newest first, so skipped versions still show.
+        const newer = (await res.json())
+          .map((r) => ({ ...r, ver: (r.tag_name || "").replace(/^v/, "") }))
+          .filter((r) => !r.draft && !r.prerelease && r.ver && this._verGreater(r.ver, current))
+          .sort((a, b) => (this._verGreater(a.ver, b.ver) ? -1 : 1));
+        if (!newer.length) return;
+        const rel = newer[0];
+        const { notes: top, video } = this._pullVideo(this._cleanNotes(rel.body || "", rel.ver));
+        const parts = [top, ...newer.slice(1).map((r) => this._cleanNotes(r.body || "", r.ver))];
+        const notes = newer.length === 1 ? top
+          : parts.map((n, i) => `## v${newer[i].ver}\n\n${n}`.trim()).join("\n\n");
+        this.updateAvailable = {
+          version: rel.ver,
+          notes,
+          notesHtml: this._notesHtml(notes),
+          video,
+          page: rel.html_url || this.meta.releases_url,
+          download: this.meta.download_url || rel.html_url || this.meta.releases_url,
+        };
       } catch (e) {}
     },
 
@@ -441,10 +448,12 @@ function djApp() {
       };
     },
 
-    _cleanNotes(body) {
+    // Drops the "100% local" footer and a "## vX" heading matching the release's own version.
+    _cleanNotes(body, ver) {
+      const own = ver ? new RegExp(`^\\s*#{1,4}\\s+v?${ver.replace(/\./g, "\\.")}\\s*$`, "i") : null;
       return String(body)
         .split(/\r?\n/)
-        .filter((l) => !/^\s*100% local/i.test(l))
+        .filter((l) => !/^\s*100% local/i.test(l) && !(own && own.test(l)))
         .join("\n")
         .trim();
     },

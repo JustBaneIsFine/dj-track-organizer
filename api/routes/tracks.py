@@ -52,7 +52,7 @@ async def list_tracks(
     include_owned: bool = False,
     is_owned: Optional[int] = None,
     is_repost: Optional[int] = None,
-    link: Optional[str] = Query(None, description="free | buy"),
+    link: Optional[str] = Query(None, description="free | buy | unknown"),
     priority_min: Optional[int] = None,
     priority_in: Optional[str] = Query(None, description="comma-separated exact star levels (0-4)"),
     run_id: Optional[int] = Query(None, description="show only tracks a saved run found new"),

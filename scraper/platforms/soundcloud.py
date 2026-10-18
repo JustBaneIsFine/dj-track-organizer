@@ -213,6 +213,50 @@ _TRACK_EXTRACT_JS = """
 """
 
 
+class _DownloadWatch:
+    """Reads the downloadable flag out of the api-v2 track JSON the page fetches while
+    it scrolls. The Download option itself only exists in the More menu, so the DOM
+    never shows it. Passive: no extra requests are made."""
+
+    def __init__(self, page):
+        self.page = page
+        self.flags: dict[str, bool] = {}
+        self._tasks: list = []
+
+    def start(self) -> "_DownloadWatch":
+        self.page.on("response", self._on_response)
+        return self
+
+    def _on_response(self, resp) -> None:
+        if "api-v2.soundcloud.com" in resp.url:
+            self._tasks.append(asyncio.ensure_future(self._read(resp)))
+
+    async def _read(self, resp) -> None:
+        try:
+            data = await resp.json()
+        except Exception:
+            return
+        if not isinstance(data, dict):
+            return
+        for it in data.get("collection") or []:
+            if not isinstance(it, dict):
+                continue
+            # /tracks items are tracks; /reposts items wrap one under "track".
+            t = it if it.get("kind") == "track" else it.get("track")
+            if isinstance(t, dict) and t.get("kind") == "track" and t.get("permalink_url"):
+                self.flags[_cmp_key(t["permalink_url"])] = (
+                    bool(t.get("downloadable")) and t.get("has_downloads_left") is not False
+                )
+
+    async def stop(self) -> None:
+        self.page.remove_listener("response", self._on_response)
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    def get(self, url: str) -> Optional[bool]:
+        return self.flags.get(_cmp_key(url))
+
+
 class SoundCloud(Platform):
     name = "soundcloud"
 
@@ -285,11 +329,15 @@ class SoundCloud(Platform):
                             known=None, stop_after: int = 0) -> list[ScrapedTrack]:
         base = normalize_artist_url(artist_url)
         owner = _username(base)
-        await self._goto(page, f"{base}/tracks")
-        items = await self._scroll_and_collect(
-            page, "track_title", on_progress=on_progress, known=known,
-            stop_after=stop_after, with_purchase=True,
-        )
+        dl = _DownloadWatch(page).start()
+        try:
+            await self._goto(page, f"{base}/tracks")
+            items = await self._scroll_and_collect(
+                page, "track_title", on_progress=on_progress, known=known,
+                stop_after=stop_after, with_purchase=True,
+            )
+        finally:
+            await dl.stop()
         # /tracks appends a "Related tracks" section on scroll; keep only the
         # artist's own uploads (URL owned by the same username).
         out = []
@@ -298,7 +346,8 @@ class SoundCloud(Platform):
             if _username(url) != owner:
                 continue
             out.append(ScrapedTrack(name=i["name"], url=url, is_repost=False,
-                                    purchase_url=i.get("purchase_url")))
+                                    purchase_url=i.get("purchase_url"),
+                                    sc_download=dl.get(url)))
         return out
 
     async def scrape_reposts(
@@ -306,15 +355,20 @@ class SoundCloud(Platform):
         known=None, stop_after: int = 0
     ) -> list[ScrapedTrack]:
         base = normalize_artist_url(artist_url)
-        await self._goto(page, f"{base}/reposts")
         cap = 0 if limit in (0,) else limit
-        items = await self._scroll_and_collect(
-            page, "track_title", limit=cap, on_progress=on_progress,
-            known=known, stop_after=stop_after, with_purchase=True,
-        )
+        dl = _DownloadWatch(page).start()
+        try:
+            await self._goto(page, f"{base}/reposts")
+            items = await self._scroll_and_collect(
+                page, "track_title", limit=cap, on_progress=on_progress,
+                known=known, stop_after=stop_after, with_purchase=True,
+            )
+        finally:
+            await dl.stop()
         return [
             ScrapedTrack(name=i["name"], url=_strip(i["url"]), is_repost=True,
-                         purchase_url=i.get("purchase_url"))
+                         purchase_url=i.get("purchase_url"),
+                         sc_download=dl.get(i["url"]))
             for i in items
         ]
 

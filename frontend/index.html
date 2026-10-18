@@ -293,8 +293,9 @@
         </div>
         <span class="sep" x-show="lay('filter.link')"></span>
         <div class="chip-group" data-pill x-show="lay('filter.link')">
-          <span class="chip" :class="{on: filters.link==='free'}" @click="setLink('free')" data-tip="Tracks with a free download link. Click again to clear."><i class="ic ic-download-simple"></i> Free <span class="chip-count" data-roll x-text="chipStats.free_total||0"></span></span>
-          <span class="chip" :class="{on: filters.link==='buy'}" @click="setLink('buy')" data-tip="Tracks that link to Bandcamp or Beatport. Click again to clear."><i class="ic ic-shopping-cart-simple"></i> Buy <span class="chip-count" data-roll x-text="chipStats.buy_total||0"></span></span>
+          <span class="chip" :class="{on: filters.link==='free'}" @click="setLink('free')" data-tip="SoundCloud&#39;s own Download file option, or a link to a free download page (Hypeddit, PumpYourSound, Toneden and similar). Click again to clear."><i class="ic ic-download-simple"></i> Free <span class="chip-count" data-roll x-text="chipStats.free_total||0"></span></span>
+          <span class="chip" :class="{on: filters.link==='buy'}" @click="setLink('buy')" data-tip="A buy link to Bandcamp or Beatport, and no free download. Click again to clear."><i class="ic ic-shopping-cart-simple"></i> Buy <span class="chip-count" data-roll x-text="chipStats.buy_total||0"></span></span>
+          <span class="chip chip-unknown" :class="{on: filters.link==='unknown'}" @click="setLink('unknown')" data-tip="No download option and no buy link was found. Click again to clear."><i class="ic ic-question"></i> Unknown <span class="chip-count" data-roll x-text="chipStats.unknown_total||0"></span></span>
         </div>
         <span class="sep" x-show="lay('filter.stars')"></span>
         <div class="chip-group" x-show="lay('filter.stars')">
@@ -369,8 +370,9 @@
               <span class="repost-tag" x-show="t.is_repost"><i class="ic ic-repeat"></i></span><span class="tname" @click.stop="openTrack(t)" x-text="t.name"></span>
               <span class="merged-badge" x-show="t.group_size > 1" x-cloak x-text="'shared by ' + t.group_size"></span>
               <span class="revisit-badge" x-show="t.is_revisit" x-cloak><i class="ic ic-clock-counter-clockwise"></i> revisit</span>
-              <span class="link-badge free" x-show="lay('tr.link') && linkKind(t)==='free'" x-cloak data-tip="Has a free download link"><i class="ic ic-download-simple"></i> free</span>
+              <span class="link-badge free" x-show="lay('tr.link') && linkKind(t)==='free'" x-cloak :data-tip="_freeLink(t) ? 'Has a free download link' : 'Download file is in the More menu on SoundCloud'"><i class="ic ic-download-simple"></i> free</span>
               <span class="link-badge buy" x-show="lay('tr.link') && linkKind(t)==='buy'" x-cloak data-tip="Links to a store"><i class="ic ic-shopping-cart-simple"></i> buy</span>
+              <span class="link-badge unknown" x-show="lay('tr.link') && !linkKind(t)" x-cloak data-tip="No free or buy link found"><i class="ic ic-question"></i></span>
               <span class="owned-badge" x-show="t.is_owned" x-cloak><i class="ic ic-check"></i> owned</span>
             </span>
             <span class="ext" @click.stop="openTrack(t)" data-tip="Open in browser"><i class="ic ic-arrow-square-out"></i></span>

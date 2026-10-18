@@ -21,7 +21,7 @@ window.DJ.LAYOUT_SECTIONS = [
         { key: "filter.type", label: "All types / Originals / <i class='ic ic-repeat'></i> Reposts", on: false },
       ] },
       { label: "Link", items: [
-        { key: "filter.link", label: "<i class='ic ic-download-simple'></i> Free / <i class='ic ic-shopping-cart-simple'></i> Buy", on: false },
+        { key: "filter.link", label: "<i class='ic ic-download-simple'></i> Free / <i class='ic ic-shopping-cart-simple'></i> Buy / <i class='ic ic-question'></i> Unknown", on: false },
       ] },
       { label: "Stars", items: [
         { key: "filter.stars", label: "<i class='ic ic-star'></i> 1<i class='ic ic-star-fill'></i> 2<i class='ic ic-star-fill'></i> 3<i class='ic ic-star-fill'></i> 4<i class='ic ic-star-fill'></i>", on: false },
@@ -67,7 +67,7 @@ window.DJ.LAYOUT_SECTIONS = [
     note: "Title, artist and the listened / revisit marks are always shown.",
     groups: [
       { label: "", items: [
-        { key: "tr.link", label: "<i class='ic ic-download-simple'></i> free / <i class='ic ic-shopping-cart-simple'></i> buy pill", on: true },
+        { key: "tr.link", label: "<i class='ic ic-download-simple'></i> free / <i class='ic ic-shopping-cart-simple'></i> buy / <i class='ic ic-question'></i> pill", on: true },
       ] },
     ],
   },

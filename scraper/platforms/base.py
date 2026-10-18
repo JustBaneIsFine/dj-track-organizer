@@ -20,6 +20,7 @@ class ScrapedTrack:
     url: Optional[str]
     is_repost: bool = False
     purchase_url: Optional[str] = None  # buy / free-download link found in the track row, if any
+    sc_download: Optional[bool] = None  # platform's own download option; None = not seen
 
 
 @dataclass

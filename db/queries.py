@@ -144,6 +144,11 @@ async def track_urls_for_artist(conn: aiosqlite.Connection, artist_id: int) -> s
         return {canonical_url_key(r["url"]) for r in await cur.fetchall() if r["url"]}
 
 
+async def mark_dl_checked(conn: aiosqlite.Connection, artist_id: int) -> None:
+    await conn.execute("UPDATE artists SET dl_checked = 1 WHERE id = ?", (artist_id,))
+    await conn.commit()
+
+
 def _row(r: Optional[aiosqlite.Row]) -> Optional[dict]:
     return dict(r) if r is not None else None
 
@@ -374,12 +379,13 @@ async def refresh_artist_cache(conn: aiosqlite.Connection, artist_id: int) -> No
 
 
 # Tracks
-# Same rule as linkKind() in frontend/js/tracks.js: a store host means "buy",
-# any other link counts as a free download.
+# Same rule as linkKind() in frontend/js/tracks.js: SoundCloud's own download or any
+# non-store link is "free", a store host is "buy", nothing at all is "unknown".
 _BUY_SQL = "(t.purchase_url LIKE '%bandcamp.com%' OR t.purchase_url LIKE '%beatport.com%')"
 LINK_SQL = {
-    "buy": _BUY_SQL,
-    "free": f"(COALESCE(t.purchase_url, '') <> '' AND NOT {_BUY_SQL})",
+    "buy": f"({_BUY_SQL} AND t.sc_download = 0)",
+    "free": f"(t.sc_download = 1 OR (COALESCE(t.purchase_url, '') <> '' AND NOT {_BUY_SQL}))",
+    "unknown": "(COALESCE(t.purchase_url, '') = '' AND t.sc_download = 0)",
 }
 
 
@@ -572,6 +578,7 @@ async def upsert_track(
     url: Optional[str],
     is_repost: int = 0,
     purchase_url: Optional[str] = None,
+    sc_download: Optional[bool] = None,
     artist_name: Optional[str] = None,
 ) -> Optional[int]:
     """Insert if new (by artist_id+url), else just bump last_seen.
@@ -597,22 +604,25 @@ async def upsert_track(
         ) as cur:
             existing = await cur.fetchone()
 
+    dl = None if sc_download is None else int(bool(sc_download))
     if existing:
         # Keep any previously captured purchase_url when a re-scrape doesn't find one
         # (COALESCE keeps the old value when the new one is NULL), so updates never
-        # wipe a link that was captured before.
+        # wipe a link that was captured before. sc_download follows the artist's
+        # current setting whenever it was seen.
         await conn.execute(
             "UPDATE tracks SET last_seen = ?, name = ?, dedup_key = ?, group_key = ?, "
-            "purchase_url = COALESCE(?, purchase_url), purchase_checked = 1 WHERE id = ?",
-            (ts, name, key, gkey, purchase_url, existing["id"]),
+            "purchase_url = COALESCE(?, purchase_url), purchase_checked = 1, "
+            "sc_download = COALESCE(?, sc_download) WHERE id = ?",
+            (ts, name, key, gkey, purchase_url, dl, existing["id"]),
         )
         return None
 
     cur = await conn.execute(
         """INSERT INTO tracks (artist_id, name, url, is_repost, added_at, last_seen, dedup_key, group_key,
-                               purchase_url, purchase_checked)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-        (artist_id, name, url, is_repost, ts, ts, key, gkey, purchase_url),
+                               purchase_url, purchase_checked, sc_download)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+        (artist_id, name, url, is_repost, ts, ts, key, gkey, purchase_url, dl or 0),
     )
     return cur.lastrowid
 
@@ -998,7 +1008,7 @@ async def stats(
         "SELECT COUNT(*) AS n FROM artists WHERE is_deleted = 0 AND last_scraped IS NULL"
     ) as cur:
         out["unscraped_artists"] = (await cur.fetchone())["n"]
-    free, buy = (LINK_SQL[k].replace("t.purchase_url", "purchase_url") for k in ("free", "buy"))
+    free, buy, unknown = (LINK_SQL[k].replace("t.purchase_url", "purchase_url").replace("t.sc_download", "sc_download") for k in ("free", "buy", "unknown"))
     async with conn.execute(
         f"""SELECT
               COUNT(*) AS total,
@@ -1010,7 +1020,8 @@ async def stats(
               SUM(CASE WHEN is_repost = 1 THEN 1 ELSE 0 END) AS reposts_total,
               SUM(CASE WHEN is_repost = 1 AND is_checked = 1 THEN 1 ELSE 0 END) AS reposts_listened,
               SUM(CASE WHEN {free} THEN 1 ELSE 0 END) AS free_total,
-              SUM(CASE WHEN {buy} THEN 1 ELSE 0 END) AS buy_total
+              SUM(CASE WHEN {buy} THEN 1 ELSE 0 END) AS buy_total,
+              SUM(CASE WHEN {unknown} THEN 1 ELSE 0 END) AS unknown_total
            FROM tracks WHERE is_deleted = 0{nd}{art_sql}""",
         art_params,
     ) as cur:
@@ -1025,6 +1036,7 @@ async def stats(
     out["reposts_listened"] = r["reposts_listened"] or 0
     out["free_total"] = r["free_total"] or 0
     out["buy_total"] = r["buy_total"] or 0
+    out["unknown_total"] = r["unknown_total"] or 0
     out["listened_pct"] = round(100 * out["listened"] / out["tracks_total"]) if out["tracks_total"] else 0
     out["originals_pct"] = round(100 * out["originals_listened"] / out["originals_total"]) if out["originals_total"] else 0
     out["reposts_pct"] = round(100 * out["reposts_listened"] / out["reposts_total"]) if out["reposts_total"] else 0
