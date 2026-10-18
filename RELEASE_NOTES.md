@@ -7,7 +7,9 @@
 - **Animations**, with a Motion setting under Settings, Appearance: Off, Low, Mid or All.
 - **Feedback window** for sending suggestions, bug reports or anything else from inside the app. Open it with Feedback in the top bar.
 - **Ko-fi link** in the top bar and the About panel.
-- **Free and Buy pills** on track rows that have a download or purchase link.
+- **SoundCloud downloads** are detected. Tracks where the artist turned on Download file (under More on SoundCloud) now count as Free. The first update after installing does a full pass on each artist so older tracks get checked; later updates are back to normal speed.
+- **Free, Buy and Unknown pills** on track rows. Unknown marks tracks with no download option and no buy link.
+- **Unknown filter** next to Free and Buy.
 - **Update chime**, an optional sound when an update finds new tracks. Off by default; turn it on under Settings, Updating.
 - **Filter chips** when nothing matches. Each active filter shows as a chip that can be removed on its own.
 
@@ -23,6 +25,8 @@
 - **Bulk actions** shrink to icons when the window is narrow instead of wrapping.
 - **"Copy non-DL & listened"** is now "No free DL: copy & mark heard". It works the same.
 - **Track and artist lists** have faint row striping.
+- **Free, Buy and Unknown tooltips** say what each one counts.
+- **Update notice** lists the notes for every version since the installed one, so skipped releases aren't missed.
 
 ### Fixed
 
