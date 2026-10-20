@@ -119,7 +119,7 @@
           No saved results yet. They appear here after an update finds new tracks.</div>
       </div>
     </div>
-    <button @click="pickFolder()" :disabled="ownedBusy" data-tip="Check a music folder for tracks you already own">
+    <button @click="openChecks()" :disabled="ownedBusy" data-tip="Check a music folder for tracks you already own">
       <span x-show="!ownedBusy"><i class="ic ic-folder"></i> Check folder</span><span x-show="ownedBusy" x-cloak class="fx-rocking"><i class="ic ic-folder"></i> Scanning…</span>
     </button>
     <button class="theme-btn" @click="toggleTheme($event)" :data-tip="theme==='dark' ? 'Switch to light' : 'Switch to dark'" :aria-label="theme==='dark' ? 'Switch to light' : 'Switch to dark'">
@@ -429,7 +429,7 @@
 
   <!-- In-app confirm dialog -->
   <template x-if="confirmBox">
-    <div class="overlay" @click.self="_confirmNo()">
+    <div class="overlay" style="z-index:80" @click.self="_confirmNo()">
       <div class="modal" style="max-width:440px">
         <h2>Please confirm</h2>
         <div class="body"><div x-text="confirmBox.message"></div></div>
@@ -613,7 +613,7 @@
 
   <!-- Check-folder progress modal -->
   <template x-if="ownedScan">
-    <div class="overlay">
+    <div class="overlay" style="z-index:60">
       <div class="modal session-card" style="max-width:420px">
         <h2>Checking your folder…</h2>
         <div class="body" style="align-items:center; text-align:center; gap:14px; display:flex; flex-direction:column;">
@@ -630,47 +630,147 @@
     </div>
   </template>
 
-  <!-- Owned-folder review modal -->
-  <template x-if="ownedReview">
-    <div class="overlay" @click.self="closeOwnedReview()">
-      <div class="modal session-card">
-        <h2>Tracks you already own</h2>
-        <div class="body">
-          <div class="muted">
-            Scanned <b x-text="ownedReview.scanned"></b> audio files ·
-            <b x-text="ownedDisplayed().length"></b> match at ≥ <b x-text="ownedReview.threshold"></b>% ·
-            <b x-text="ownedSelected().length"></b> selected
-            <a href="#" @click.prevent="setAllMatches(true)" style="margin-left:6px">All</a> /
-            <a href="#" @click.prevent="setAllMatches(false)">None</a>
+  <!-- Check folder screen: saved checks, decided one match at a time -->
+  <template x-if="showChecks">
+    <div class="overlay" @keydown.window="checkKey($event)">
+      <div class="modal check-screen" :class="{ 'cs-review': check }">
+        <template x-if="!check">
+          <div class="cs-wrap">
+            <div class="cs-head">
+              <h2>Folder checks</h2>
+              <span style="flex:1"></span>
+              <button class="ghost" @click="closeChecks()" aria-label="Close" data-tip="Close"><i class="ic ic-x"></i></button>
+            </div>
+            <div class="cs-list">
+              <template x-for="c in checks" :key="c.id">
+                <div class="cs-row">
+                  <div class="cs-row-main">
+                    <div class="cs-root" x-text="checkLabel(c)"></div>
+                    <div class="muted" style="font-size:12px">
+                      <span x-show="c.left_count" x-text="`${c.left_count.toLocaleString()} of ${c.total.toLocaleString()} left`"></span>
+                      <span x-show="!c.left_count" x-text="`Done · ${c.total.toLocaleString()} decided`"></span>
+                      · <span x-text="fmtRunDate(c.updated_at)"></span>
+                    </div>
+                  </div>
+                  <button :class="{ primary: c.left_count }" @click="openCheck(c.id)" x-text="c.left_count ? 'Continue' : 'Open'"></button>
+                  <button class="ghost" @click="removeCheck(c)" aria-label="Remove this check" data-tip="Remove this check"><i class="ic ic-trash"></i></button>
+                </div>
+              </template>
+            </div>
+            <div class="foot">
+              <span class="muted" style="font-size:12px; margin-right:auto">Your files are never modified. Only names are read.</span>
+              <button class="primary" @click="pickFolder()" :disabled="ownedBusy"><i class="ic ic-folder"></i> Check a folder…</button>
+            </div>
           </div>
-          <div class="muted" style="font-size:11px">Your files are never modified. Names are read, nothing else.</div>
-          <div class="field">
-            <label>Match strictness: <b x-text="ownedReview.threshold + '%'"></b></label>
-            <input type="range" :min="ownedReview.floor != null ? ownedReview.floor : ownedFloor()" max="100" step="1" x-model.number="ownedReview.threshold" />
-          </div>
-          <div class="muted" style="font-size:11px">Click a match to open it on SoundCloud<span x-show="ownedReview.hasPaths">, or <i class="ic ic-play"></i> to play your copy</span>. Untick anything that isn't the same song and it won't come back.</div>
-          <div class="preview" x-show="ownedDisplayed().length">
-            <template x-for="m in ownedDisplayed()" :key="m.track_id">
-              <div class="pv" :style="m.url ? 'cursor:pointer' : ''" @click="m.url && window.open(m.url, '_blank')"
-                   :data-tip="m.url ? 'Open on SoundCloud' : ''">
-                <input type="checkbox" x-model="m.sel" @click.stop data-tip="Apply to this match" />
-                <span style="color:var(--accent)" x-text="m.score + '%'"></span>
-                <span x-text="(m.artist_name ? m.artist_name + ' - ' : '') + m.track_name"></span>
-                <span class="ext" x-show="m.url" style="opacity:.7"><i class="ic ic-arrow-square-out"></i></span>
-                <button class="mini" x-show="ownedReview.hasPaths" @click.stop="openLocalFile(m)"
-                        data-tip="Play the local file in your default player" aria-label="Play the local file in your default player"><i class="ic ic-play"></i></button>
-                <div class="muted" style="font-size:11px"><i class="ic ic-arrow-elbow-down-right"></i> <span x-text="m.filename"></span></div>
+        </template>
+
+        <template x-if="check">
+          <div class="cs-wrap">
+            <div class="cs-head">
+              <button class="ghost" @click="backToChecks()" aria-label="All checks" data-tip="All checks"><i class="ic ic-arrow-left"></i></button>
+              <div class="cs-title">
+                <b x-text="checkLabel(check)"></b>
+                <span class="muted" x-text="checkLeftAll() ? `${checkLeftAll().toLocaleString()} of ${check.items.length.toLocaleString()} left` : (checkHidden() ? 'All shown decided' : 'All decided')"></span>
               </div>
-            </template>
+              <span style="flex:1"></span>
+              <label class="cs-fuzzy" :class="{ danger: fuzzyDanger() }"
+                     data-tip="Fuzzy matches under this score are hidden, not rejected. Under 90% they are often a different track.">
+                <span><i class="ic ic-warning" x-show="fuzzyDanger()"></i> Show fuzzy matches from <b x-text="fuzzyFrom() + '%'"></b></span>
+                <input type="range" min="85" :max="fuzzyMax()" step="1" :value="fuzzyFrom()"
+                       :style="`--pos:${(fuzzyFrom() - 85) / (fuzzyMax() - 85) * 100}%; --zone:${5 / (fuzzyMax() - 85) * 100}%`"
+                       @input="setFuzzyFrom($event.target.value)" @change="setFuzzyFrom($event.target.value, true)" />
+              </label>
+              <button @click="closeChecks()" data-tip="Close. Every decision is already saved."><i class="ic ic-pause"></i> Pause</button>
+            </div>
+            <div class="cs-prog"><div :style="`width:${checkPct()}%`"></div></div>
+
+            <div class="cs-tabs">
+              <template x-for="k in checkKinds" :key="k.key">
+                <button class="cs-tab" :class="'k-' + k.key + (check.tab === k.key ? ' on' : '')" @click="setCheckTab(k.key)" data-tip="Tab moves to the next tab">
+                  <span class="kind-badge" :class="'k-' + k.key + (k.key === 'fuzzy' && fuzzyDanger() ? ' danger' : '')" x-text="k.label"></span>
+                  <span x-text="checkLeft(k.key).toLocaleString() + ' left'"></span>
+                  <span class="muted cs-hidden" x-show="k.key === 'fuzzy' && checkHidden()" x-text="'· ' + checkHidden().toLocaleString() + ' hidden'"></span>
+                </button>
+              </template>
+              <button class="cs-tab cs-tab-decided" :class="{ on: check.tab === 'decided' }" @click="setCheckTab('decided')"
+                      x-text="'Decided ' + checkDecided().length.toLocaleString()"></button>
+            </div>
+
+            <div class="cs-body">
+              <template x-if="check.tab !== 'decided' && checkCurrent()">
+                <div class="cs-card" x-data="{ get it() { return checkCurrent() } }">
+                  <div class="cs-slide">
+                  <div class="cs-why">
+                    <span x-text="checkKind(it.kind).why"></span>
+                    <span class="muted" :class="{ 'cs-low': it.score < 90 }" x-text="`· ${it.score}% · ${checkPosition()}`"></span>
+                    <span class="muted" x-show="it.state === 'skipped'">· skipped before</span>
+                  </div>
+                  <div class="cs-pair">
+                    <div class="cs-side">
+                      <div class="cs-side-label">SoundCloud</div>
+                      <div class="cs-name" x-html="checkBold(checkScTitle(it), it.filename)"></div>
+                      <button class="mini ghost" x-show="it.url" @click="openCheckLink(it)"><i class="ic ic-arrow-square-out"></i> Open link <kbd>O</kbd></button>
+                    </div>
+                    <div class="cs-side" :class="'k-' + it.kind">
+                      <div class="cs-side-label">Your file</div>
+                      <div class="cs-name" x-html="checkBold(it.filename, checkScTitle(it))"></div>
+                      <button class="mini ghost" x-show="it.has_path" @click="playCheckItem(it)"><i class="ic ic-play"></i> Play <kbd>P</kbd></button>
+                      <span class="muted" style="font-size:11px" x-show="!it.has_path">Not playable: this check was made with the browser folder picker.</span>
+                    </div>
+                  </div>
+                  </div>
+                  <div class="cs-actions">
+                    <button class="primary" @click="decideCurrent('same')">Same track <kbd>Y</kbd></button>
+                    <button @click="decideCurrent('different')">Different <kbd>N</kbd></button>
+                    <button @click="decideCurrent('skipped')">Skip <kbd>S</kbd></button>
+                    <button @click="checkBack()" :disabled="!check.history.length">Back <kbd>U</kbd></button>
+                  </div>
+                </div>
+              </template>
+
+              <template x-if="check.tab !== 'decided' && !checkCurrent()">
+                <div class="cs-empty">
+                  <template x-if="checkLeftAll()">
+                    <div>
+                      <div>Nothing left in <b x-text="checkKind(check.tab).label"></b>.</div>
+                      <button style="margin-top:12px" @click="nextCheckTab()">Next tab <kbd>Tab</kbd></button>
+                    </div>
+                  </template>
+                  <template x-if="!checkLeftAll()">
+                    <div>
+                      <div x-show="!checkHidden()"><i class="ic ic-check-circle"></i> Every match in this check is decided.</div>
+                      <div x-show="checkHidden()"><i class="ic ic-check-circle"></i> Every shown match is decided.
+                        <span x-text="`${checkHidden().toLocaleString()} fuzzy matches are hidden below ${fuzzyFrom()}%.`"></span></div>
+                      <button class="primary" style="margin-top:12px" @click="closeChecks()">Done</button>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              <template x-if="check.tab === 'decided'">
+                <div class="cs-decided">
+                  <div class="cs-empty" x-show="!checkDecided().length">Nothing decided yet.</div>
+                  <template x-for="it in checkDecided().slice(0, check.decidedLimit || 200)" :key="it.id">
+                    <div class="cs-drow">
+                      <span class="kind-badge" :class="'k-' + it.kind" x-text="checkKind(it.kind).label"></span>
+                      <span class="cs-dname" :data-tip="it.filename" x-text="checkScTitle(it)"></span>
+                      <span class="cs-dstate" :class="it.state" x-text="it.state === 'same' ? (it.action === 'delete' ? 'Same, deleted' : 'Same, owned') : 'Different'"></span>
+                      <button class="mini" @click="undoItem(it)">Undo</button>
+                    </div>
+                  </template>
+                  <button class="mini" style="margin:10px auto; display:block" x-show="checkDecided().length > (check.decidedLimit || 200)"
+                          @click="check.decidedLimit = (check.decidedLimit || 200) + 500">Show more</button>
+                </div>
+              </template>
+            </div>
+
+            <div class="cs-foot" x-show="check.tab === 'exact' && checkLeft('exact')">
+              <span style="flex:1"></span>
+              <button @click="acceptAllExact()"
+                      x-text="`Same track for all ${checkLeft('exact').toLocaleString()}`"></button>
+            </div>
           </div>
-          <div class="empty" x-show="!ownedDisplayed().length">No matches at this strictness.</div>
-        </div>
-        <div class="foot">
-          <button @click="closeOwnedReview()">Cancel</button>
-          <span style="flex:1"></span>
-          <button @click="applyOwned('delete')" :disabled="!ownedDisplayed().length">Soft-delete these</button>
-          <button class="primary" @click="applyOwned('own')" :disabled="!ownedDisplayed().length"><i class="ic ic-check"></i> Tag as owned</button>
-        </div>
+        </template>
       </div>
     </div>
   </template>

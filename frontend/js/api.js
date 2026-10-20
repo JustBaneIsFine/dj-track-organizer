@@ -76,12 +76,16 @@ window.api = (() => {
     log: () => j("/api/scrape/log"),
 
     // owned (folder scan)
-    scanOwned: (filenames, floor, artist_id, token) => j("/api/owned/scan", { method: "POST", ...body({ filenames, floor, artist_id, token }) }),
+    scanOwned: (filenames, root, floor, artist_id, token) => j("/api/owned/scan", { method: "POST", ...body({ filenames, root, floor, artist_id, token }) }),
     pickFolderNative: () => j("/api/owned/pick", { method: "POST" }),
     scanPending: (pending, floor, artist_id, token) => j("/api/owned/scan-pending", { method: "POST", ...body({ pending, floor, artist_id, token }) }),
     ownedProgress: (token) => j("/api/owned/progress?token=" + encodeURIComponent(token)),
-    openOwnedFile: (filename) => j("/api/owned/open", { method: "POST", ...body({ filename }) }),
-    rejectMatches: (pairs) => j("/api/owned/reject", { method: "POST", ...body({ pairs }) }),
+    openOwnedFile: (item_id) => j("/api/owned/open", { method: "POST", ...body({ item_id }) }),
+    listChecks: () => j("/api/owned/checks"),
+    getCheck: (id) => j(`/api/owned/checks/${id}`),
+    deleteCheck: (id) => j(`/api/owned/checks/${id}`, { method: "DELETE" }),
+    decideItems: (item_ids, decision) => j("/api/owned/decide", { method: "POST", ...body({ item_ids, decision }) }),
+    undoItems: (item_ids) => j("/api/owned/undo", { method: "POST", ...body({ item_ids }) }),
 
     // sessions
     resumable: () => j("/api/sessions/resumable"),

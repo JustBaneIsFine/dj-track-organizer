@@ -150,8 +150,29 @@ def _best_for_track(t, norm_files, norm_index, sorted_index, floor, exclude):
     return best_score, best_file
 
 
+def _artist_in(nf: str, track: dict) -> bool:
+    """True if the normalized filename names the track's artist (name, alias or
+    uploader handle) as a whole word."""
+    names = [track.get("artist_name") or "", *(track.get("artist_aliases") or [])]
+    handle = uploader_handle(track.get("url"))
+    if handle:
+        names.append(handle)
+    for n in names:
+        a = normalize(n)
+        if a and re.search(rf"\b{re.escape(a)}\b", nf):
+            return True
+    return False
+
+
+def match_kind(score: int, filename: str, track: dict, exact_at: int = 98) -> str:
+    """'exact', 'title' (high score but the file never names the artist) or 'fuzzy'."""
+    if score < exact_at:
+        return "fuzzy"
+    return "exact" if _artist_in(normalize(filename), track) else "title"
+
+
 def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
-                    progress_cb=None, rejected: dict = None) -> list[dict]:
+                    progress_cb=None, rejected: dict = None, exact_at: int = 98) -> list[dict]:
     """Return tracks that fuzzily match some file in the folder, at score >= floor.
 
     For each track we take the best score across its candidate strings vs every
@@ -195,6 +216,7 @@ def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
                 "url": t.get("url"),  # so the review modal can open the track
                 "filename": best_file,
                 "score": round(best_score),
+                "kind": match_kind(round(best_score), best_file, t, exact_at),
             })
         if progress_cb is not None and (ti & 63) == 0:  # ~every 64 tracks
             progress_cb(ti + 1, total)

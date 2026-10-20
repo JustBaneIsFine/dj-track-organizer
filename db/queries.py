@@ -813,6 +813,206 @@ async def get_owned_rejections(
     return out
 
 
+async def remove_owned_rejection(conn: aiosqlite.Connection, track_id: int, filename: str) -> None:
+    await conn.execute(
+        "DELETE FROM owned_rejections WHERE track_id = ? AND filename = ?", (track_id, filename)
+    )
+
+
+# Folder checks: saved scans whose matches are decided one at a time.
+_SNAPSHOT_COLS = ("is_owned", "owned_at", "is_checked", "checked_at",
+                  "is_revisit", "revisit_at", "is_deleted", "deleted_at")
+_LEFT = "('pending', 'skipped')"
+
+
+async def find_open_check(
+    conn: aiosqlite.Connection, root: str, artist_id: Optional[int]
+) -> Optional[int]:
+    async with conn.execute(
+        "SELECT id FROM owned_checks WHERE status = 'open' AND root = ? AND artist_id IS ? "
+        "ORDER BY id DESC LIMIT 1", (root, artist_id),
+    ) as cur:
+        row = await cur.fetchone()
+    return row["id"] if row else None
+
+
+async def create_check(
+    conn: aiosqlite.Connection, *, root: str, artist_id: Optional[int], file_count: int,
+) -> int:
+    ts = now_iso()
+    cur = await conn.execute(
+        "INSERT INTO owned_checks (root, artist_id, created_at, updated_at, file_count) "
+        "VALUES (?, ?, ?, ?, ?)", (root, artist_id, ts, ts, file_count),
+    )
+    await conn.commit()
+    return cur.lastrowid
+
+
+async def add_check_items(conn: aiosqlite.Connection, check_id: int, items: list[dict]) -> int:
+    """Insert matches, skipping tracks this check already holds. Returns how many were new."""
+    async with conn.execute(
+        "SELECT track_id FROM owned_check_items WHERE check_id = ?", (check_id,)
+    ) as cur:
+        have = {r["track_id"] for r in await cur.fetchall()}
+    rows = [(check_id, m["track_id"], m["filename"], m.get("path"), m["score"], m["kind"])
+            for m in items if m["track_id"] not in have]
+    if rows:
+        await conn.executemany(
+            "INSERT INTO owned_check_items (check_id, track_id, filename, path, score, kind) "
+            "VALUES (?, ?, ?, ?, ?, ?)", rows,
+        )
+    await conn.execute(
+        "UPDATE owned_checks SET updated_at = ?, status = 'open' WHERE id = ?", (now_iso(), check_id)
+    )
+    await conn.commit()
+    return len(rows)
+
+
+async def list_checks(conn: aiosqlite.Connection) -> list[dict]:
+    async with conn.execute(
+        f"""SELECT c.*, a.name AS artist_name,
+              (SELECT COUNT(*) FROM owned_check_items i WHERE i.check_id = c.id) AS total,
+              (SELECT COUNT(*) FROM owned_check_items i
+                 WHERE i.check_id = c.id AND i.state IN {_LEFT}) AS left_count
+            FROM owned_checks c LEFT JOIN artists a ON a.id = c.artist_id
+            ORDER BY c.updated_at DESC"""
+    ) as cur:
+        return _rows(await cur.fetchall())
+
+
+async def get_check(conn: aiosqlite.Connection, check_id: int) -> Optional[dict]:
+    async with conn.execute(
+        "SELECT c.*, a.name AS artist_name FROM owned_checks c "
+        "LEFT JOIN artists a ON a.id = c.artist_id WHERE c.id = ?", (check_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+_ITEM_SELECT = """SELECT i.id, i.check_id, i.track_id, i.filename, i.path IS NOT NULL AS has_path,
+       i.score, i.kind, i.state, i.action, i.decided_at,
+       t.name AS track_name, t.url, a.name AS artist_name
+  FROM owned_check_items i
+  JOIN tracks t ON t.id = i.track_id
+  JOIN artists a ON a.id = t.artist_id"""
+
+
+async def list_check_items(conn: aiosqlite.Connection, check_id: int) -> list[dict]:
+    async with conn.execute(f"{_ITEM_SELECT} WHERE i.check_id = ? ORDER BY i.id", (check_id,)) as cur:
+        return _rows(await cur.fetchall())
+
+
+async def get_check_item(conn: aiosqlite.Connection, item_id: int) -> Optional[dict]:
+    async with conn.execute(
+        "SELECT * FROM owned_check_items WHERE id = ?", (item_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def _touch_check(conn: aiosqlite.Connection, check_id: int) -> None:
+    async with conn.execute(
+        f"SELECT COUNT(*) AS n FROM owned_check_items WHERE check_id = ? AND state IN {_LEFT}",
+        (check_id,),
+    ) as cur:
+        left = (await cur.fetchone())["n"]
+    await conn.execute(
+        "UPDATE owned_checks SET updated_at = ?, status = ? WHERE id = ?",
+        (now_iso(), "open" if left else "done", check_id),
+    )
+
+
+async def decide_check_items(
+    conn: aiosqlite.Connection, item_ids: list[int], decision: str
+) -> int:
+    """Record 'same' / 'different' / 'skipped' for items still undecided. 'same' tags
+    the track owned right away; 'different' remembers the pair
+    so it never matches again. Earlier track flags are kept for undo."""
+    n = 0
+    check_ids = set()
+    for item_id in item_ids:
+        it = await get_check_item(conn, item_id)
+        if not it or it["state"] not in ("pending", "skipped"):
+            continue
+        check_ids.add(it["check_id"])
+        ts = now_iso()
+        if decision == "skipped":
+            await conn.execute(
+                "UPDATE owned_check_items SET state = 'skipped' WHERE id = ?", (item_id,)
+            )
+            n += 1
+            continue
+        prev = None
+        action = None
+        if decision == "same":
+            async with conn.execute(
+                f"SELECT {', '.join(_SNAPSHOT_COLS)} FROM tracks WHERE id = ?", (it["track_id"],)
+            ) as cur:
+                row = await cur.fetchone()
+            prev = json.dumps(dict(row)) if row else None
+            action = "owned"
+            sets, params = _track_update_sets({"is_owned": 1})
+            await conn.execute(
+                f"UPDATE tracks SET {', '.join(sets)} WHERE id = ?", params + [it["track_id"]]
+            )
+        else:
+            await conn.execute(
+                "INSERT OR IGNORE INTO owned_rejections (track_id, filename, created_at) "
+                "VALUES (?, ?, ?)", (it["track_id"], it["filename"], ts),
+            )
+        await conn.execute(
+            "UPDATE owned_check_items SET state = ?, action = ?, prev = ?, decided_at = ? "
+            "WHERE id = ?", (decision, action, prev, ts, item_id),
+        )
+        n += 1
+    for cid in check_ids:
+        await _touch_check(conn, cid)
+    await conn.commit()
+    return n
+
+
+async def undo_check_items(conn: aiosqlite.Connection, item_ids: list[int]) -> int:
+    """Put decided or skipped items back to pending and restore what each changed."""
+    n = 0
+    check_ids = set()
+    for item_id in item_ids:
+        it = await get_check_item(conn, item_id)
+        if not it or it["state"] == "pending":
+            continue
+        if it["state"] == "same" and it["prev"]:
+            prev = json.loads(it["prev"])
+            cols = [c for c in _SNAPSHOT_COLS if c in prev]
+            await conn.execute(
+                f"UPDATE tracks SET {', '.join(f'{c} = ?' for c in cols)} WHERE id = ?",
+                [prev[c] for c in cols] + [it["track_id"]],
+            )
+        elif it["state"] == "different":
+            await remove_owned_rejection(conn, it["track_id"], it["filename"])
+        await conn.execute(
+            "UPDATE owned_check_items SET state = 'pending', action = NULL, prev = NULL, "
+            "decided_at = NULL WHERE id = ?", (item_id,),
+        )
+        check_ids.add(it["check_id"])
+        n += 1
+    for cid in check_ids:
+        await _touch_check(conn, cid)
+    await conn.commit()
+    return n
+
+
+async def delete_check(conn: aiosqlite.Connection, check_id: int) -> None:
+    """Drop a check. Decisions already made stay applied to the tracks."""
+    await conn.execute("DELETE FROM owned_check_items WHERE check_id = ?", (check_id,))
+    await conn.execute("DELETE FROM owned_checks WHERE id = ?", (check_id,))
+    await conn.commit()
+
+
+async def check_item_path(conn: aiosqlite.Connection, item_id: int) -> Optional[str]:
+    async with conn.execute("SELECT path FROM owned_check_items WHERE id = ?", (item_id,)) as cur:
+        row = await cur.fetchone()
+    return row["path"] if row else None
+
+
 # Import sessions
 async def create_session(
     conn: aiosqlite.Connection,
@@ -1094,9 +1294,10 @@ async def export_all(conn: aiosqlite.Connection) -> dict:
 
 
 # Child tables before their parents (FK-safe delete order).
-_DELETE_ORDER = ("scrape_log", "import_sessions", "tracks", "artists", "skipped_artists", "settings")
+_DELETE_ORDER = ("owned_check_items", "owned_checks", "scrape_log", "import_sessions", "tracks", "artists", "skipped_artists", "settings")
 # Parents before children (FK-safe insert order).
-_INSERT_ORDER = ("artists", "tracks", "import_sessions", "scrape_log", "skipped_artists", "settings")
+_INSERT_ORDER = ("artists", "tracks", "import_sessions", "scrape_log", "skipped_artists",
+                 "owned_checks", "owned_check_items", "settings")
 
 
 async def _table_columns(conn: aiosqlite.Connection, table: str) -> set[str]:

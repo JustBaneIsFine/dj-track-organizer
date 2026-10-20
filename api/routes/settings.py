@@ -37,6 +37,7 @@ _INT_SETTINGS = {
     "owned_match_threshold": (0, 100, "Match strictness"),
     "owned_match_floor": (0, 100, "Match floor"),
     "owned_match_floor_artist": (0, 100, "Artist match floor"),
+    "owned_fuzzy_from": (0, 100, "Show fuzzy matches from"),
     "saved_runs_keep": (1, 100, "Saved runs to keep"),
     "track_page_size": (1, 5_000, "Tracks per view"),
     "ui_scale": (50, 300, "UI scale"),

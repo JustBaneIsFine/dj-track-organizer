@@ -1,9 +1,9 @@
-"""'Tracks I already own' - folder scan endpoints.
+"""'Tracks I already own' - folder checks.
 
 Receives file *names* (native dialog walk, or the browser's folder picker) and
-fuzzily matches them against the library. Files are never modified; /open hands a
-matched file to the OS default player on explicit request. Applying the result
-changes nothing here - it reuses PATCH /tracks/bulk.
+fuzzily matches them against the library. The matches are saved as a check and
+decided one at a time, so a review survives closing the app. Files are never
+modified; /open hands a matched file to the OS default player on request.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import os
 import subprocess
 import sys
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -29,44 +29,39 @@ router = APIRouter(prefix="/api/owned", tags=["owned"])
 # Values are 0-100; an absent token means "no scan / done".
 SCAN_PROGRESS: dict[str, int] = {}
 
-# basename -> abspath from the most recent native folder scan, so a match can be
-# opened in the default player. Only /open reads it, and /open only accepts names
-# from this map (never a path from the client). Browser-picker scans clear it.
-LAST_SCAN_PATHS: dict[str, str] = {}
-
-# Names from a native /pick, held until the client matches them via /scan-pending.
-# Keeps folder-picking and matching as two steps so the UI can show each separately.
-PENDING_SCANS: dict[str, list[str]] = {}
+# A native /pick's result, held until the client matches it via /scan-pending. Keeps
+# folder-picking and matching as two steps so the UI can show each separately.
+PENDING_SCANS: dict[str, dict] = {}
 
 
 class ScanBody(BaseModel):
     filenames: list[str]
-    floor: Optional[int] = None  # lowest score to return; defaults to settings floor
+    root: str = "Folder"  # the picked folder's name (the browser picker has no path)
+    floor: Optional[int] = None  # lowest score to keep; defaults to settings floor
     artist_id: Optional[int] = None  # scope the match to a single artist's tracks
     token: Optional[str] = None  # progress-poll token (see /progress)
 
 
-async def _match_against_library(
-    db, filenames: list[str], floor: Optional[int],
+async def _match_into_check(
+    db, root: str, filenames: list[str], paths: dict[str, str], floor: Optional[int],
     artist_id: Optional[int] = None, token: Optional[str] = None,
 ) -> dict:
-    """Shared by /scan and /pick: match filenames vs not-yet-owned tracks.
+    """Match filenames vs not-yet-owned tracks and save the hits as a check.
 
-    When ``artist_id`` is given, only that artist's tracks are candidates - used by
-    the per-artist "Check folder" which can match at a more lenient floor since the
-    pool is small and already artist-scoped. Matching is CPU-bound, so it runs in a
-    worker thread (keeps the server + SSE responsive) and reports progress via
-    ``SCAN_PROGRESS[token]``.
+    Rechecking a folder that still has an open check adds to that check. With
+    ``artist_id`` only that artist's tracks are candidates (the per-artist check,
+    which runs at a more lenient floor). Matching is CPU-bound, so it runs in a
+    worker thread and reports progress via ``SCAN_PROGRESS[token]``.
     """
     if floor is None:
         floor = int(await queries.get_setting(db, "owned_match_floor", 90))
     floor = min(100, max(0, floor))
+    exact_at = int(await queries.get_setting(db, "owned_match_threshold", 98))
     tracks = await queries.list_tracks(
         db, include_owned=True, limit=100000,
         artist_ids=[artist_id] if artist_id else None,
     )
     candidates = [t for t in tracks if not t["is_owned"]]
-    # Attach each artist's aliases so alias-prefixed filenames ("Alias - Title") match.
     artists = await queries.list_artists(db, include_deleted=True)
     alias_map = {a["id"]: a.get("aliases") or [] for a in artists}
     for t in candidates:
@@ -82,15 +77,22 @@ async def _match_against_library(
             SCAN_PROGRESS[token] = int(100 * done / total) if total else 100
     try:
         matches = await asyncio.to_thread(
-            match.match_filenames, candidates, filenames, floor, progress_cb, rejected
+            match.match_filenames, candidates, filenames, floor, progress_cb, rejected, exact_at
         )
     finally:
         if token:
             SCAN_PROGRESS.pop(token, None)
-    return {
-        "scanned": sum(1 for f in filenames if match.is_audio(f)),
-        "matches": matches,
-    }
+    for m in matches:
+        m["path"] = paths.get(m["filename"])
+
+    scanned = sum(1 for f in filenames if match.is_audio(f))
+    check_id = await queries.find_open_check(db, root, artist_id)
+    if check_id is None:
+        if not matches:
+            return {"scanned": scanned, "check_id": None, "added": 0}
+        check_id = await queries.create_check(db, root=root, artist_id=artist_id, file_count=scanned)
+    added = await queries.add_check_items(db, check_id, matches)
+    return {"scanned": scanned, "check_id": check_id, "added": added}
 
 
 @router.get("/progress")
@@ -101,20 +103,16 @@ async def progress(token: str):
 
 @router.post("/scan")
 async def scan(body: ScanBody, db=Depends(get_db)):
-    """Match a list of file names (from the browser folder picker) - read-only."""
-    LAST_SCAN_PATHS.clear()  # browser picker gives names only, no paths to open
-    result = await _match_against_library(
-        db, body.filenames, body.floor, body.artist_id, body.token
+    """Match a list of file names from the browser folder picker (names only)."""
+    return await _match_into_check(
+        db, body.root, body.filenames, {}, body.floor, body.artist_id, body.token
     )
-    result["has_paths"] = False
-    return result
 
 
 @router.post("/pick")
 async def pick():
     """Open a native OS folder dialog and list audio names (read-only). Returns a
-    token to match via /scan-pending, so the UI shows 'choosing' and 'matching' as
-    separate steps. Also remembers name->path so a match can be opened in a player."""
+    token to match via /scan-pending. Paths are kept so a match can be played."""
     try:
         path = await asyncio.get_event_loop().run_in_executor(None, folder_pick.ask_directory)
     except Exception as e:  # noqa: BLE001 - e.g. no dialog available
@@ -122,12 +120,10 @@ async def pick():
     if not path:
         return {"cancelled": True}
     names, paths = folder_pick.walk_audio_paths(path)
-    LAST_SCAN_PATHS.clear()
-    LAST_SCAN_PATHS.update(paths)
     PENDING_SCANS.clear()
     pending = uuid.uuid4().hex
-    PENDING_SCANS[pending] = names
-    return {"cancelled": False, "pending": pending, "count": len(names), "has_paths": True}
+    PENDING_SCANS[pending] = {"root": os.path.normpath(path), "names": names, "paths": paths}
+    return {"cancelled": False, "pending": pending, "count": len(names)}
 
 
 class PendingBody(BaseModel):
@@ -140,42 +136,64 @@ class PendingBody(BaseModel):
 @router.post("/scan-pending")
 async def scan_pending(body: PendingBody, db=Depends(get_db)):
     """Match the names from a native /pick (by its pending token) against the library."""
-    names = PENDING_SCANS.pop(body.pending, None)
-    if names is None:
-        raise HTTPException(404, "Scan expired; please choose the folder again")
-    result = await _match_against_library(db, names, body.floor, body.artist_id, body.token)
-    result["has_paths"] = True
-    return result
+    p = PENDING_SCANS.pop(body.pending, None)
+    if p is None:
+        raise HTTPException(404, "Scan expired; choose the folder again")
+    return await _match_into_check(
+        db, p["root"], p["names"], p["paths"], body.floor, body.artist_id, body.token
+    )
 
 
-class RejectItem(BaseModel):
-    track_id: int
-    filename: str
+@router.get("/checks")
+async def list_checks(db=Depends(get_db)):
+    return await queries.list_checks(db)
 
 
-class RejectBody(BaseModel):
-    pairs: list[RejectItem]
+@router.get("/checks/{check_id}")
+async def get_check(check_id: int, db=Depends(get_db)):
+    c = await queries.get_check(db, check_id)
+    if not c:
+        raise HTTPException(404, "Check not found")
+    c["items"] = await queries.list_check_items(db, check_id)
+    return c
 
 
-@router.post("/reject")
-async def reject(body: RejectBody, db=Depends(get_db)):
-    """Remember (track, filename) pairs as 'not the same song', so future scans skip
-    those exact pairs. The track can still match a different file."""
-    n = await queries.add_owned_rejections(db, [(p.track_id, p.filename) for p in body.pairs])
-    return {"rejected": n}
+@router.delete("/checks/{check_id}")
+async def delete_check(check_id: int, db=Depends(get_db)):
+    await queries.delete_check(db, check_id)
+    return {"deleted": True}
+
+
+class DecideBody(BaseModel):
+    item_ids: list[int]
+    decision: Literal["same", "different", "skipped"]
+
+
+@router.post("/decide")
+async def decide(body: DecideBody, db=Depends(get_db)):
+    return {"decided": await queries.decide_check_items(db, body.item_ids, body.decision)}
+
+
+class UndoBody(BaseModel):
+    item_ids: list[int]
+
+
+@router.post("/undo")
+async def undo(body: UndoBody, db=Depends(get_db)):
+    return {"undone": await queries.undo_check_items(db, body.item_ids)}
 
 
 class OpenBody(BaseModel):
-    filename: str
+    item_id: int
 
 
 @router.post("/open")
-async def open_file(body: OpenBody):
-    """Open a scanned file in the OS default player. Only accepts basenames from
-    the last native scan, so no arbitrary path can be opened."""
-    path = LAST_SCAN_PATHS.get(body.filename)
+async def open_file(body: OpenBody, db=Depends(get_db)):
+    """Open a matched file in the OS default player. Only a path a native scan stored
+    for a check item can be opened, never one sent by the client."""
+    path = await queries.check_item_path(db, body.item_id)
     if not path or not os.path.isfile(path):
-        raise HTTPException(404, "File not known from the last folder scan")
+        raise HTTPException(404, "File not found. It may have moved since the check.")
     try:
         if sys.platform == "win32":
             os.startfile(path)  # noqa: S606 - user-chosen folder, OS default handler

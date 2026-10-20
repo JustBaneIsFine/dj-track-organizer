@@ -681,3 +681,81 @@ a { color: var(--accent); text-decoration: none; }
 .tp-next { flex: none; }
 .fx-tour { animation: rise .3s var(--spring); }
 .narrow.touring .sidebar { display: flex; }
+
+/* Check folder screen */
+.check-screen { width: 920px; max-width: 94vw; max-height: 90vh; overflow: hidden; display: flex; }
+.cs-wrap { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cs-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.cs-head h2 { border: none; padding: 0; }
+.cs-title { display: flex; flex-direction: column; min-width: 0; }
+.cs-title b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-title .muted { font-size: 12px; }
+.cs-action { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.cs-prog { height: 3px; background: var(--bg); }
+.cs-prog > div { height: 100%; background: var(--accent); }
+.cs-list { flex: 1; overflow-y: auto; padding: 6px 16px; min-height: 120px; }
+.cs-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.cs-row-main { flex: 1; min-width: 0; }
+.cs-root { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-tabs { display: flex; gap: 2px; padding: 10px 16px 0; border-bottom: 1px solid var(--border); }
+.cs-tab { display: flex; align-items: center; gap: 7px; background: transparent; border: 1px solid transparent; border-bottom: none;
+  border-radius: 7px 7px 0 0; padding: 8px 14px; color: var(--text-faint); margin-bottom: -1px; opacity: .6; }
+.cs-tab:hover { border-color: transparent; color: var(--text-dim); opacity: .9; }
+.cs-tab.on { --tab-c: var(--text-dim); --tab-bg: var(--bg-elev2); opacity: 1; color: var(--text); font-weight: 600;
+  background: var(--tab-bg); border-color: var(--tab-c); box-shadow: inset 0 -3px var(--tab-c); }
+.cs-tab.k-exact.on { --tab-c: var(--accent); --tab-bg: var(--accent-soft); }
+.cs-tab.k-title.on { --tab-c: var(--warn); --tab-bg: rgba(224,184,74,.16); }
+.cs-tab-decided { margin-left: auto; }
+.kind-badge { font-size: 11px; padding: 1px 7px; border-radius: 4px; white-space: nowrap; flex: none;
+  background: var(--bg-elev2); color: var(--text-dim); border: 1px solid var(--border); }
+.kind-badge.k-exact { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.kind-badge.k-title { background: rgba(224,184,74,.16); color: var(--warn); border-color: transparent; }
+.cs-body { flex: 1; min-height: 0; overflow-y: auto; padding: 44px 24px 36px; display: flex; flex-direction: column; }
+.cs-card { display: flex; flex-direction: column; gap: 40px; }
+.cs-why { color: var(--text-dim); }
+.cs-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cs-side { border: 1px solid var(--border); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
+.cs-side.k-title { border-color: var(--warn); }
+.cs-side-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .8px; }
+/* Always three lines tall, so a longer name never moves the buttons; more scrolls. */
+.cs-name { font-size: 17px; line-height: 1.4; color: var(--text-dim); overflow-wrap: anywhere;
+  height: calc(3 * 1.4em); overflow-y: auto; align-self: stretch; }
+.cs-name b { color: var(--text); font-weight: 600; }
+.cs-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.cs-actions button { padding: 8px 16px; }
+kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px;
+  padding: 1px 6px; margin-left: 6px; color: var(--text-dim); background: transparent; }
+button.primary kbd { color: inherit; border-color: rgba(0,0,0,.3); }
+.cs-empty { margin: auto; text-align: center; color: var(--text-dim); }
+.cs-decided { display: flex; flex-direction: column; }
+.cs-drow { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.cs-dname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-dstate { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.cs-dstate.same { color: var(--accent); }
+.cs-foot { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--border); }
+@media (max-width: 700px) { .cs-pair { grid-template-columns: 1fr; } .cs-action { font-size: 0; } }
+.cs-body { position: relative; overflow-x: hidden; }
+.cs-slide { display: flex; flex-direction: column; gap: 10px; }
+.cs-ghost { position: absolute; z-index: 2; pointer-events: none; border-radius: 10px; padding: 8px; margin: -8px;
+  background: var(--bg-elev); border: 1px solid var(--border); animation: cs-fly .42s cubic-bezier(.5,0,.75,0) forwards; }
+.cs-ghost-same { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-elev)); }
+.cs-ghost-different { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--bg-elev)); }
+.cs-slide.cs-settle { animation: cs-settle .38s var(--ease); }
+.cs-slide.cs-return { animation: cs-return .38s var(--ease); }
+@keyframes cs-fly { to { transform: translateX(110%) rotate(7deg); opacity: 0; } }
+@keyframes cs-settle { from { transform: scale(.96) translateY(6px); opacity: .25; } }
+@keyframes cs-return { from { transform: translateX(80%) rotate(6deg); opacity: 0; } }
+.cs-fuzzy { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.cs-fuzzy b { color: var(--text); }
+.cs-fuzzy.danger, .cs-fuzzy.danger b { color: var(--danger); }
+/* Track: filled part, then the 85-90% danger stretch faintly tinted, then the rest. */
+.cs-fuzzy input[type=range] { --c: var(--accent); width: 120px; height: 16px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; }
+.cs-fuzzy.danger input[type=range] { --c: var(--danger); }
+.cs-fuzzy input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--c) 0 var(--pos), transparent var(--pos)),
+    linear-gradient(to right, color-mix(in srgb, var(--danger) 35%, var(--border)) 0 var(--zone), var(--border) var(--zone)); }
+.cs-fuzzy input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px;
+  border-radius: 50%; background: var(--c); border: none; cursor: pointer; }
+.kind-badge.danger { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); border-color: transparent; }
+.cs-hidden { font-size: 12px; font-weight: 400; }
+.cs-low { color: var(--danger); }
