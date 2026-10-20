@@ -690,6 +690,10 @@
             <label><input type="checkbox" x-model="importRescan" style="width:auto; margin-right:6px" /> Re-scan follow list for new artists</label>
             <span class="muted" style="font-size:11px">Off reuses the last saved list, which skips reading the follow page.</span>
           </div>
+          <div class="field" x-show="importSourceUrl.trim() && importSkippedCount">
+            <label><input type="checkbox" x-model="importIncludeSkipped" style="width:auto; margin-right:6px" /> Include artists skipped before (<span x-text="importSkippedCount"></span>)</label>
+            <span class="muted" style="font-size:11px">Artists skipped in an earlier review are left out of new imports.</span>
+          </div>
           <div class="muted" style="text-align:center">- or -</div>
           <div class="field">
             <label>Paste artist URLs (one per line)</label>

@@ -295,6 +295,19 @@ async def get_artist_by_url(conn: aiosqlite.Connection, url: str) -> Optional[di
         return _artist_row(await cur.fetchone())
 
 
+async def add_skipped_artist(conn: aiosqlite.Connection, url: str, name: str) -> None:
+    await conn.execute(
+        "INSERT OR REPLACE INTO skipped_artists (url, name, skipped_at) VALUES (?, ?, ?)",
+        (url, name, now_iso()),
+    )
+    await conn.commit()
+
+
+async def skipped_artist_urls(conn: aiosqlite.Connection) -> set[str]:
+    async with conn.execute("SELECT url FROM skipped_artists") as cur:
+        return {r["url"] for r in await cur.fetchall()}
+
+
 async def add_artist(
     conn: aiosqlite.Connection,
     *,
@@ -1074,16 +1087,16 @@ async def purge_deleted(conn: aiosqlite.Connection) -> dict:
 
 async def export_all(conn: aiosqlite.Connection) -> dict:
     out: dict[str, list] = {}
-    for table in ("artists", "tracks", "import_sessions", "scrape_log", "settings"):
+    for table in _INSERT_ORDER:
         async with conn.execute(f"SELECT * FROM {table}") as cur:
             out[table] = _rows(await cur.fetchall())
     return out
 
 
 # Child tables before their parents (FK-safe delete order).
-_DELETE_ORDER = ("scrape_log", "import_sessions", "tracks", "artists", "settings")
+_DELETE_ORDER = ("scrape_log", "import_sessions", "tracks", "artists", "skipped_artists", "settings")
 # Parents before children (FK-safe insert order).
-_INSERT_ORDER = ("artists", "tracks", "import_sessions", "scrape_log", "settings")
+_INSERT_ORDER = ("artists", "tracks", "import_sessions", "scrape_log", "skipped_artists", "settings")
 
 
 async def _table_columns(conn: aiosqlite.Connection, table: str) -> set[str]:

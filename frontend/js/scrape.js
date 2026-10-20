@@ -13,15 +13,19 @@ window.DJ.scrapeMixin = {
   _es: null,
   _preRunTrackIds: [],
   importRescan: true,  // re-scan follow list for new artists (off = reuse last saved list)
+  importIncludeSkipped: false,
+  importSkippedCount: 0,
 
   openImport() {
     this.importSourceUrl = this.settings.source_url || "";
     this.importError = "";
+    this.importIncludeSkipped = false;
     this.showImport = true;
+    api.skippedCount().then((r) => { this.importSkippedCount = r.count; }).catch(() => {});
   },
 
   async startImport() {
-    const body = { mode: this.importMode, rescan: this.importRescan };
+    const body = { mode: this.importMode, rescan: this.importRescan, include_skipped: this.importIncludeSkipped };
     const pasted = this.importPasted.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
     if (pasted.length) body.artist_urls = pasted;
     else if (this.importSourceUrl.trim()) {
@@ -90,7 +94,9 @@ window.DJ.scrapeMixin = {
       case "list_progress": r.listCount = ev.count; break;
       case "list_done": r.listCount = ev.count; this.toast(`Found ${ev.count} artists`); break;
       case "list_filtered":
-        this.toast(`${ev.skipped_known} already in your library - skipped. ${ev.remaining} new to review.`);
+        this.toast([ev.skipped_known && `${ev.skipped_known} already in your library`,
+          ev.skipped_before && `${ev.skipped_before} skipped before`].filter(Boolean).join(", ")
+          + ` - left out. ${ev.remaining} new to review.`);
         break;
       case "run_start": r.total = ev.total; break;
       case "queue_grew": r.total = ev.total; break;

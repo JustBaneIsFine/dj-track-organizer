@@ -73,11 +73,13 @@ class ScrapeManager:
         source_url: Optional[str],
         artist_urls: Optional[list[str]],
         rescan: bool = True,
+        include_skipped: bool = False,
     ) -> int:
         """Begin an import. Either scrape ``source_url`` for a follow list, or
         use an explicit list of ``artist_urls``. When ``rescan`` is False and a
         ``source_url`` is given, reuse the last saved list for that source instead
-        of re-scraping the follow page. Returns the session id."""
+        of re-scraping the follow page. Artists skipped in an earlier review are left
+        out of a follow-list import unless ``include_skipped``. Returns the session id."""
         queue: list[dict] = []
         if source_url and not artist_urls and not is_soundcloud_url(source_url):
             raise ValueError(f"Not a SoundCloud link: {source_url.strip()[:80]}")
@@ -115,7 +117,8 @@ class ScrapeManager:
         # Only scrape the follow page when we don't already have a seeded queue.
         run_source = source_url if (rescan and not artist_urls) else None
         job.task = asyncio.create_task(
-            self._run(session_id, run_mode="import", source_url=run_source, filter_known=True)
+            self._run(session_id, run_mode="import", source_url=run_source, filter_known=True,
+                      hide_skipped=not artist_urls and not include_skipped)
         )
         return session_id
 
@@ -288,7 +291,7 @@ class ScrapeManager:
 
     # The background run
     async def _run(self, session_id: int, *, run_mode: str, source_url: Optional[str],
-                   filter_known: bool = False) -> None:
+                   filter_known: bool = False, hide_skipped: bool = False) -> None:
         job = self.jobs[session_id]
         conn = await connect()
         log_id = await queries.start_log(conn, mode=run_mode, session_id=session_id)
@@ -334,21 +337,25 @@ class ScrapeManager:
                 # Fresh import only (never on resume - would shift current_index):
                 # drop artists we already have so the user reviews only new ones.
                 if filter_known and run_mode == "import":
-                    new_queue, skipped_known = [], 0
+                    new_queue, skipped_known, skipped_before = [], 0, 0
+                    passed = await queries.skipped_artist_urls(conn) if hide_skipped else set()
                     for e in queue:
                         existing = await queries.get_artist_by_url(conn, e["url"])
                         if existing:  # skip anything already in the library, incl. soft-deleted
                             skipped_known += 1
+                        elif e["url"] in passed:
+                            skipped_before += 1
                         else:
                             new_queue.append(e)
-                    if skipped_known:
+                    if skipped_known or skipped_before:
                         queue = new_queue
                         await queries.update_session(
                             conn, session_id, artist_queue=queue, total_artists=len(queue)
                         )
                         await job.emit({
                             "type": "list_filtered",
-                            "skipped_known": skipped_known, "remaining": len(queue),
+                            "skipped_known": skipped_known, "skipped_before": skipped_before,
+                            "remaining": len(queue),
                         })
 
                 job.queue = queue  # expose for live appends (single-artist updates)
@@ -462,6 +469,7 @@ class ScrapeManager:
             if getattr(job, "_skip_rest", False):
                 entry["status"] = "skipped"
                 job.skipped += 1
+                await queries.add_skipped_artist(conn, entry["url"], entry["name"])
                 await self._persist(conn, session_id, queue, idx + 1, job)
                 await job.emit({"type": "artist_skipped", "index": idx, "name": entry["name"]})
                 continue
@@ -483,6 +491,7 @@ class ScrapeManager:
             if action == "skip":
                 entry["status"] = "skipped"
                 job.skipped += 1
+                await queries.add_skipped_artist(conn, entry["url"], entry["name"])
                 await self._persist(conn, session_id, queue, idx + 1, job)
                 await job.emit({"type": "artist_skipped", "index": idx, "name": entry["name"]})
                 continue

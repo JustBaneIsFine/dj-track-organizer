@@ -21,6 +21,7 @@ class ImportBody(BaseModel):
     artist_urls: Optional[list[str]] = None
     mode: str = "batch"  # 'batch' | 'interactive'
     rescan: bool = True  # False = reuse last saved list for source_url (skip follow-page scrape)
+    include_skipped: bool = False  # True = also review artists skipped in earlier imports
 
 
 class UpdateBody(BaseModel):
@@ -45,10 +46,16 @@ async def start_import(body: ImportBody, db=Depends(get_db)):
         sid = await manager.start_import(
             db, mode=body.mode, source_url=body.source_url,
             artist_urls=body.artist_urls, rescan=body.rescan,
+            include_skipped=body.include_skipped,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"session_id": sid}
+
+
+@router.get("/skipped")
+async def skipped_count(db=Depends(get_db)):
+    return {"count": len(await queries.skipped_artist_urls(db))}
 
 
 @router.post("/update")
