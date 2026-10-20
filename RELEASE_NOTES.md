@@ -1,6 +1,7 @@
 ### Added
 
 - **Open artist settings** in the track right-click menu. It opens the artist's settings without changing the current filters.
+- **Skipped artists are remembered.** Artists skipped while reviewing an import are left out of later imports from a follow list. Turn on "Include artists skipped before" in the import window to review them again.
 
 ### Changed
 
@@ -10,4 +11,5 @@
 ### Fixed
 
 - **Arrow keys and clicks** lagged in lists with thousands of tracks.
+- **An artist could be queued twice** during an update. Queuing one that is already waiting now says so instead.
 - **Changing a filter** briefly showed the new tracks before their animation started.
