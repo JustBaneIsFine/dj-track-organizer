@@ -180,24 +180,29 @@ class ScrapeManager:
         self, conn: aiosqlite.Connection, session_id: int, artist_ids: list[int]
     ) -> dict:
         """Append artists to a still-running batch update so they scrape in the same
-        queue instead of starting a competing run. Returns {enqueued, active}."""
+        queue instead of starting a competing run. Artists still waiting or running
+        in it are not added twice. Returns {enqueued, already, active}."""
         job = self.jobs.get(session_id)
         # task may still be None for a beat right after start_update, so only treat
         # a *finished* task as "no longer accepting work".
         if (not job or job.interactive or job.queue is None
                 or (job.task is not None and job.task.done())):
-            return {"enqueued": 0, "active": False}
-        n = 0
+            return {"enqueued": 0, "already": 0, "active": False}
+        n = already = 0
+        waiting = {e["url"] for e in job.queue if e.get("status") not in ("done", "skipped")}
         for aid in artist_ids or []:
             a = await queries.get_artist(conn, aid)
-            if a and not a["is_deleted"]:
+            if a and a["url"] in waiting:
+                already += 1
+            elif a and not a["is_deleted"]:
+                waiting.add(a["url"])
                 job.queue.append(
                     {"url": a["url"], "name": a["name"], "status": "pending", "artist_id": a["id"]}
                 )
                 n += 1
         if n:
             await job.emit({"type": "queue_grew", "total": len(job.queue)})
-        return {"enqueued": n, "active": True}
+        return {"enqueued": n, "already": already, "active": True}
 
     async def relaunch(self, conn: aiosqlite.Connection, session_id: int) -> int:
         """Resume a previously paused session from its persisted current_index."""

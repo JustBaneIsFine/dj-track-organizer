@@ -152,6 +152,7 @@ window.DJ.artistsMixin = {
       try {
         const res = await api.enqueueUpdate(r.sid, [a.id]);
         if (res.enqueued) { this.toast(`Queued ${a.name} for update`); return; }
+        if (res.already) { this.toast(`${a.name} is already queued`, "warn"); return; }
       } catch (e) { /* fall through to a fresh run */ }
     }
     this.runUpdate("single", [a.id]);
