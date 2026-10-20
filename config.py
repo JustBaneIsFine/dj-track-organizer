@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "dj-organizer"
-APP_VERSION = "0.3.1"
+APP_VERSION = "0.3.2"
 
 # owner/repo on GitHub; used for the update check and About links.
 GITHUB_REPO = "JustBaneIsFine/dj-track-organizer"
@@ -92,8 +92,9 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "accent_listened": "",      # listened/originals color; empty = follow --accent
     "accent_revisit": "#e0b84a",  # revisit color (amber); drives --revisit
     "owned_match_threshold": "98",  # default folder-match strictness (%)
-    "owned_match_floor": "90",      # lowest selectable strictness (for now)
-    "owned_match_floor_artist": "88",  # lower floor for per-artist "Check folder" (small, scoped pool)
+    "owned_match_floor": "85",      # lowest score a folder check keeps
+    "owned_match_floor_artist": "85",  # same, for the per-artist check
+    "owned_fuzzy_from": "90",       # fuzzy matches below this are hidden in the review
     "show_owned": "false",          # owned tracks hidden by default
     "compact_layout": "",           # JSON: which pieces compact shows (layout panel)
     "narrow_hide_sidebar": "true",  # hide the sidebar when the window is narrow
