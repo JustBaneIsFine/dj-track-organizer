@@ -55,6 +55,7 @@ function djApp() {
       this._watchNarrow();
       this._startHeartbeat();
       this._initAnim();
+      this._initRowMarks();
       this.ready = true;
     },
 
@@ -562,6 +563,7 @@ function djApp() {
       });
     },
     _scrollToFocused() {
+      if (this.focusedIndex >= this.renderLimit) this.renderLimit = Infinity;
       this.$nextTick(() => document.querySelector(".track.focused")?.scrollIntoView({ block: "nearest" }));
     },
 

@@ -109,8 +109,7 @@ window.DJ = window.DJ || {};
   function dialogIn(overlay) {
     const modal = overlay.querySelector(".modal");
     if (!modal || !on(1)) return;
-    overlay.animate([{ backgroundColor: "rgba(0,0,0,0)" }, { backgroundColor: "rgba(0,0,0,.6)" }],
-      { duration: 200, easing: "ease-out" });
+    overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease-out" });
     if (!on(2)) {
       modal.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
         { duration: 200, easing: EASE });
@@ -223,13 +222,24 @@ window.DJ = window.DJ || {};
       if (!p) { p = document.createElement("span"); p.className = "pill"; g.prepend(p); }
       g.classList.add("has-pill");
       const act = [...g.querySelectorAll(":scope > .chip.on:not(.no-pill)")].filter((c) => c.offsetParent);
-      if (act.length !== 1) { p.style.opacity = "0"; p.dataset.shown = ""; continue; }
+      if (act.length !== 1) { p.style.opacity = "0"; p.dataset.shown = ""; p._box = null; continue; }
       const c = act[0], first = !p.dataset.shown;
-      if (first) p.style.transition = "none";
-      Object.assign(p.style, { left: c.offsetLeft + "px", top: c.offsetTop + "px",
-        width: c.offsetWidth + "px", height: c.offsetHeight + "px", opacity: "1" });
+      const box = [c.offsetLeft, c.offsetTop, c.offsetWidth, c.offsetHeight];
+      if (p._box && box.join() === p._box.join()) continue;
+      p._box = box;
+      // FLIP on transform so the slide runs on the compositor and keeps moving while
+      // the main thread is busy rendering the new track list.
+      const from = first ? null : p.getBoundingClientRect();
+      p.getAnimations().forEach((a) => a.cancel());
+      Object.assign(p.style, { left: box[0] + "px", top: box[1] + "px",
+        width: box[2] + "px", height: box[3] + "px", opacity: "1" });
       p.dataset.shown = "1";
-      if (first) { void p.offsetWidth; p.style.transition = ""; }
+      if (!from || !from.width) continue;
+      const to = p.getBoundingClientRect(), z = zoom();
+      const dx = (from.left - to.left) / z, dy = (from.top - to.top) / z, sx = from.width / to.width;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < 0.01) continue;
+      p.animate([{ transform: `translate(${dx}px, ${dy}px) scaleX(${sx})` }, { transform: "none" }],
+        { duration: 240, easing: ease() });
     }
   }
   function watchPills(scope) {

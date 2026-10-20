@@ -154,6 +154,23 @@ window.DJ.tracksMixin = {
   // rows drop in. A new query (filter, sort, artist) fades the first rows in instead.
   tracksLoaded: false,
   _collapseStagger: 0,
+  // A new query renders one screenful first and the rest in small chunks after the
+  // filter pill has slid. Rendering 500 rows at once froze the UI for most of a second.
+  renderLimit: Infinity,
+  listSwapping: false,
+  shownTracks() {
+    return this.tracks.length > this.renderLimit ? this.tracks.slice(0, this.renderLimit) : this.tracks;
+  },
+  _growRender() {
+    const seq = (this._growSeq = (this._growSeq || 0) + 1);
+    const step = () => {
+      if (seq !== this._growSeq) return;
+      if (this.renderLimit >= this.tracks.length) { this.renderLimit = Infinity; return; }
+      this.renderLimit += 30;
+      setTimeout(step, 16);
+    };
+    setTimeout(step, 240);
+  },
   async loadTracks() {
     const seq = (this._trkSeq = (this._trkSeq || 0) + 1);
     const A = DJ.anim;
@@ -161,10 +178,20 @@ window.DJ.tracksMixin = {
     this.tracksLoading = true;
     try {
       const q = this._trackQuery();
-      const r = await api.listTracks(q);
-      if (seq !== this._trkSeq) return;
       const key = JSON.stringify(q);
       const same = this.tracksLoaded && key === this._trkKey;
+      // A new query holds the old rows (dimmed) until the filter pill has finished
+      // sliding; swapping hundreds of rows mid-slide makes it stutter.
+      const t0 = performance.now();
+      if (!same && this.tracksLoaded && A.on(1)) this.listSwapping = true;
+      const r = await api.listTracks(q);
+      if (seq !== this._trkSeq) return;
+      const wait = this.listSwapping ? 250 - (performance.now() - t0) : 0;
+      if (wait > 0) {
+        await new Promise((res) => setTimeout(res, wait));
+        if (seq !== this._trkSeq) return;
+      }
+      this.listSwapping = false;
       this._trkKey = key;
       const list = document.querySelector(".track-list");
       const prevIds = new Set(this.tracks.map((t) => t.id));
@@ -178,26 +205,32 @@ window.DJ.tracksMixin = {
         this._collapsing = null;
       }
       this._collapseStagger = 0;
+      if (!same && r.items.length > 40) { this.renderLimit = 40; this._growRender(); }
       this.tracks = r.items;
       this.tracksTotal = r.total;
       this.tracksLoaded = true;
       // Selection refers to the previous view; clear it on (re)load.
-      this.selectedTrackIds = [];
+      // Every row's :class reads this, so only touch it when there is something to clear.
+      if (this.selectedTrackIds.length) this.selectedTrackIds = [];
       this._selectAnchor = null;
       if (this.focusedIndex >= this.tracks.length) this.focusedIndex = this.tracks.length - 1;
       this._refreshChipStats();  // keep chip counts in sync with the artist selection
-      this.$nextTick(() => {
+      // rAF, not $nextTick: Alpine's nextTick is a timeout, so the new rows could paint
+      // fully for a frame before the cascade hid them again.
+      requestAnimationFrame(() => {
+        this._syncRowMarks();
         if (same) {
           const added = r.items.filter((t) => !prevIds.has(t.id));
           if (added.length && added.length <= 10) {
             for (const t of added) A.expand(list.querySelector(`.track[data-k="${t.id}"]`), { drop: true });
           }
         } else {
-          A.cascade(A.visibleRows(list, ".track[data-k]"));
+          const rows = A.visibleRows(list, ".track[data-k]");
+          A.cascade(rows, { max: rows.length, step: Math.min(25, 360 / Math.max(1, rows.length)) });
         }
       });
     } catch (e) { this.toast(e.message, "err"); }
-    finally { if (seq === this._trkSeq) this.tracksLoading = false; }
+    finally { if (seq === this._trkSeq) { this.tracksLoading = false; this.listSwapping = false; } }
   },
 
   // Empty-state chips: one per active filter, each clears only itself.
@@ -240,6 +273,27 @@ window.DJ.tracksMixin = {
   },
 
   isSelected(id) { return this.selectedTrackIds.includes(id); },
+  // Focus and selection classes are set on the rows directly. As :class bindings every
+  // row re-evaluated on each arrow key or click, about 40ms at 1000 rows.
+  _syncRowMarks() {
+    const list = document.querySelector(".track-list");
+    if (!list) return;
+    const sel = new Set(this.selectedTrackIds);
+    const f = this.tracks[this.focusedIndex], fid = f ? f.id : null;
+    for (const el of list.children) {
+      if (!el.dataset.k) continue;
+      const id = +el.dataset.k;
+      el.classList.toggle("focused", id === fid);
+      el.classList.toggle("selected", sel.has(id));
+    }
+  },
+  _initRowMarks() {
+    const sync = () => this._syncRowMarks();
+    this.$watch("focusedIndex", sync);
+    this.$watch("selectedTrackIds", sync);
+    // Not a deep $watch on tracks: that stringifies all 1000 rows on every change.
+    this.$watch("renderLimit", () => this.$nextTick(sync));
+  },
   toggleSelect(id) {
     const i = this.selectedTrackIds.indexOf(id);
     if (i >= 0) this.selectedTrackIds.splice(i, 1);

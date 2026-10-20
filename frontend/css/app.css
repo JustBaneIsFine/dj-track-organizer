@@ -210,9 +210,17 @@ a { color: var(--accent); text-decoration: none; }
 
 /* x hidden: the spring in the select pop overshoots past full width. */
 .track-list { overflow-y: auto; overflow-x: hidden; flex: 1; }
+/* One sticky veil over the rows while a new query waits to swap in; dimming each row was 500 restyles. */
+.list-spin { position: sticky; top: 0; height: 0; z-index: 5; display: flex; justify-content: center;
+  opacity: 0; transition: opacity .12s ease; pointer-events: none; }
+.list-spin::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 100vh;
+  background: var(--bg); opacity: .6; }
+.list-spin .spin { position: relative; width: 22px; height: 22px; margin-top: 90px; border-width: 3px; }
+.swapping > .list-spin { opacity: 1; pointer-events: auto; }
 .track {
   display: flex; align-items: center; gap: 10px; height: var(--row-h);
   padding: 0 14px; border-bottom: 1px solid rgba(42,42,48,.45);
+  content-visibility: auto; contain-intrinsic-size: auto var(--row-h);
 }
 /* :where keeps striping below every state tint. */
 .track:where(:nth-of-type(even)), .artist:where(:nth-of-type(even)) { background: var(--stripe); }
@@ -223,8 +231,10 @@ a { color: var(--accent); text-decoration: none; }
 .track.checked .track-name { color: var(--text-faint); }
 .track.checked .tname { text-decoration: line-through; }
 .track.deleted { opacity: .4; }
-.track.isnew { animation: landing 1.6s ease-out; }
-@keyframes landing { 0% { background: rgba(224,184,74,.18); } 100% { background: transparent; } }
+.track.isnew { position: relative; }
+.track.isnew::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: rgba(224,184,74,.18); opacity: 0; animation: landing 1.6s ease-out; }
+@keyframes landing { from { opacity: 1; } to { opacity: 0; } }
 .check { width: 18px; height: 18px; flex: none; border: 1px solid var(--text-dim); border-radius: 4px;
   display: grid; place-items: center; cursor: pointer; font-size: 12px; }
 .check.on { background: var(--accent-dim); border-color: var(--accent-dim); color: #04211e; }
@@ -490,7 +500,7 @@ a { color: var(--accent); text-decoration: none; }
 .has-pill > .chip.on:not(.no-pill) { background: transparent; border-color: transparent; }
 .pill { position: absolute; z-index: 0; border-radius: 14px; background: var(--accent-dim);
   border: 1px solid var(--accent-dim); opacity: 0; pointer-events: none;
-  transition: left var(--dur) var(--spring), top var(--dur) var(--spring), width var(--dur) var(--spring), opacity .15s ease; }
+  transform-origin: 0 0; will-change: transform; transition: opacity .15s ease; }
 .in-run .pill { background: var(--run); border-color: var(--run); }
 
 .anim-slider { width: 100%; }
@@ -506,7 +516,7 @@ a { color: var(--accent); text-decoration: none; }
 :root[data-anim="0"] *, :root[data-anim="0"] *::before, :root[data-anim="0"] *::after {
   transition: none !important; animation: none !important; }
 :root[data-anim="0"] .spin { animation: spin .8s linear infinite !important; }
-:root[data-anim="0"] .track.isnew { animation: landing 1.6s ease-out !important; }
+:root[data-anim="0"] .track.isnew::after { animation: landing 1.6s ease-out !important; }
 
 /* Low */
 :root:not([data-anim="0"]) .toast { animation: toast-in var(--dur) var(--spring) backwards; }
@@ -558,16 +568,15 @@ a { color: var(--accent); text-decoration: none; }
 :is([data-anim="2"],[data-anim="3"]).anim-intro .seg-bar { animation: fill-in .8s var(--ease); }
 
 /* All */
-[data-anim="3"] .ctxmenu > * { animation: rise .25s var(--spring) backwards; }
 [data-anim="3"] .bulk-actions > * { animation: rise .3s var(--spring) backwards; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(2) { animation-delay: 55ms; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(3) { animation-delay: 110ms; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(4) { animation-delay: 165ms; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(5) { animation-delay: 220ms; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(6) { animation-delay: 275ms; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(7) { animation-delay: 330ms; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(8) { animation-delay: 385ms; }
-[data-anim="3"] :is(.ctxmenu, .bulk-actions) > :nth-child(n+9) { animation-delay: 440ms; }
+[data-anim="3"] .bulk-actions > :nth-child(2) { animation-delay: 55ms; }
+[data-anim="3"] .bulk-actions > :nth-child(3) { animation-delay: 110ms; }
+[data-anim="3"] .bulk-actions > :nth-child(4) { animation-delay: 165ms; }
+[data-anim="3"] .bulk-actions > :nth-child(5) { animation-delay: 220ms; }
+[data-anim="3"] .bulk-actions > :nth-child(6) { animation-delay: 275ms; }
+[data-anim="3"] .bulk-actions > :nth-child(7) { animation-delay: 330ms; }
+[data-anim="3"] .bulk-actions > :nth-child(8) { animation-delay: 385ms; }
+[data-anim="3"] .bulk-actions > :nth-child(n+9) { animation-delay: 440ms; }
 [data-anim="3"] .track .ext { transform: translateX(6px); transition: opacity .15s ease, transform .25s var(--spring); }
 [data-anim="3"] .track:hover .ext { transform: none; }
 [data-anim="3"] button:hover .ic-heart { animation: heartbeat .9s ease-in-out; }

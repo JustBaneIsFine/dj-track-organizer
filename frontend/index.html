@@ -348,9 +348,10 @@
       </div>
 
       <!-- Track list -->
-      <div class="track-list">
-        <template x-for="(t, i) in tracks" :key="t.id">
-          <div class="track" :data-k="t.id" :class="{ checked: t.is_checked, revisit: t.is_revisit, deleted: t.is_deleted, focused: focusedIndex===i, isnew: isNew(t), selected: isSelected(t.id) }"
+      <div class="track-list" :class="{ swapping: listSwapping }">
+        <span class="list-spin"><span class="spin"></span></span>
+        <template x-for="(t, i) in shownTracks()" :key="t.id">
+          <div class="track" :data-k="t.id" :class="{ checked: t.is_checked, revisit: t.is_revisit, deleted: t.is_deleted, isnew: isNew(t) }"
                @contextmenu="openCtx($event, t)" @click="rowClick(t, i, $event)">
             <div class="row-marks">
               <span class="mark heard" :class="{on: t.is_checked}" @click.stop="toggleCheck(t)" data-tip="Mark listened">
@@ -416,15 +417,13 @@
   <!-- Context menu -->
   <template x-if="ctx">
     <div class="ctxmenu" :style="`left:${ctx.x}px; top:${ctx.y}px`" @click.outside="closeCtx()">
-      <button @click="toggleCheck(ctx.track); closeCtx()" x-text="ctx.track.is_checked ? 'Mark as new' : 'Mark as listened'"></button>
-      <button @click="toggleRevisit(ctx.track); closeCtx()" x-text="ctx.track.is_revisit ? 'Unmark revisit' : 'Revisit later'"></button>
-      <button @click="openTrack(ctx.track); closeCtx()">Open link</button>
       <button x-show="selectedTrackIds.length > 1" @click="openSelectedLinks()" x-text="'Open ' + selectedTrackIds.length + ' links (in order)'"></button>
       <button @click="copyLink(ctx.track)">Copy link</button>
       <button @click="toggleOwned(ctx.track); closeCtx()" x-text="ctx.track.is_owned ? 'Unmark owned' : 'Mark as owned'"></button>
       <button x-show="!ctx.track.is_deleted" @click="deleteTrack(ctx.track); closeCtx()">Soft-delete</button>
       <button x-show="ctx.track.is_deleted" @click="restoreTrack(ctx.track); closeCtx()">Restore</button>
       <button @click="goToArtist(ctx.track)">Go to artist</button>
+      <button x-show="artistOf(ctx.track)" @click="openArtistPanel(artistOf(ctx.track)); closeCtx()">Open artist settings</button>
     </div>
   </template>
 

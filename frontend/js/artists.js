@@ -104,6 +104,7 @@ window.DJ.artistsMixin = {
     catch (e) { this.toast(e.message, "err"); }
   },
 
+  artistOf(t) { return t && this.artists.find((a) => a.id === t.artist_id); },
   openArtistPanel(a) {
     // Edit aliases as a comma-separated string in a scratch field.
     this.artistPanel = { ...a, _aliasText: (a.aliases || []).join(", ") };
