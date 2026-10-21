@@ -41,7 +41,7 @@ _VERSION_GENERIC = _VERSION_MARKERS | {"mix", "version", "re", "the", "s"}
 _BRACKET_RE = re.compile(r"[\(\[\{]([^\)\]\}]*)[\)\]\}]")
 
 
-def normalize(name: str) -> str:
+def normalize(name: str, keep_mix: bool = False) -> str:
     """Normalize a filename or track title for comparison.
 
     Strips a trailing audio extension and a leading track number, lowercases,
@@ -54,7 +54,8 @@ def normalize(name: str) -> str:
     s = _LEADING_NUM_RE.sub("", s)    # drop a leading track number
     s = s.lower()
     s = _FREE_DL_RE.sub(" ", s)       # drop promo tags absent from the real file
-    s = _NEUTRAL_RE.sub(" ", s)       # "(original mix)" etc.
+    if not keep_mix:
+        s = _NEUTRAL_RE.sub(" ", s)   # "(original mix)" etc.
     s = re.sub(r"[^\w\s]", " ", s)    # punctuation -> space (\w keeps letters/digits)
     s = s.replace("_", " ")           # underscores too (\w includes them)
     return re.sub(r"\s+", " ", s).strip()
@@ -216,16 +217,41 @@ def _artist_in(nf: str, track: dict) -> bool:
     return False
 
 
+def _exact_key(name: str) -> str:
+    """Words of a name in sorted order. Only case, punctuation, the extension, a leading
+    track number and free download tags are dropped; "(Original Mix)" stays."""
+    return _token_sort(normalize(name, keep_mix=True))
+
+
+def _exact_keys(track: dict) -> set[str]:
+    """Exact keys of every "artist - title" form of a track (name, aliases, handle)."""
+    title = track.get("name") or ""
+    artists = [track.get("artist_name") or "", *(track.get("artist_aliases") or []),
+               uploader_handle(track.get("url"))]
+    forms = [title] + [f"{a} - {title}" for a in artists if a]
+    return {k for f in forms if (k := _exact_key(f)) and _artist_in(normalize(f), track)}
+
+
+def is_identical(filename: str, track: dict, tag: str = "") -> bool:
+    """True only when the file name or its tags hold exactly the words of the artist and
+    title: every word on both sides, nothing extra, in any order."""
+    keys = _exact_keys(track)
+    return any(s and _exact_key(s) in keys for s in (filename, tag))
+
+
 def match_kind(score: int, filename: str, track: dict, exact_at: int = 98,
                tag: str = "") -> str:
-    """'exact', 'title' (high score but neither the file name nor its tags name the
-    artist) or 'fuzzy'. A one-word title with no artist is fuzzy whatever the score:
-    "Intro" or "Home" matches too many files to trust."""
+    """'exact' (identical, see is_identical), 'title' (high score, not identical) or
+    'fuzzy'. A one-word title with no artist is fuzzy whatever the score: "Intro" or
+    "Home" matches too many files to trust."""
+    if is_identical(filename, track, tag):
+        return "exact"
     if score < exact_at:
         return "fuzzy"
-    if _artist_in(normalize(filename), track) or (tag and _artist_in(normalize(tag), track)):
-        return "exact"
-    return "fuzzy" if len(normalize(track.get("name") or "").split()) <= 1 else "title"
+    if not _artist_in(normalize(filename), track) and not (tag and _artist_in(normalize(tag), track)) \
+            and len(normalize(track.get("name") or "").split()) <= 1:
+        return "fuzzy"
+    return "title"
 
 
 def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
@@ -264,6 +290,12 @@ def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
     if not entries:
         return []
 
+    by_name = {}
+    for i, f in enumerate(filenames):
+        if is_audio(f):
+            for k in {_exact_key(f), _exact_key(tags[i])} - {""}:
+                by_name.setdefault(k, []).append(i)
+
     norm_index = [e[0] for e in entries]
     # Pre-sort every file's tokens ONCE; comparing pre-sorted strings with plain
     # ratio is equivalent to token_sort_ratio but avoids re-sorting F files per query.
@@ -272,11 +304,19 @@ def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
     matches = []
     for ti, t in enumerate(tracks):
         exclude = rejected.get(t["id"]) if rejected else None
-        best_score, i = _best_for_track(
-            t, entries, norm_index, sorted_index, floor, exclude, filenames
-        )
+        # An identical file always wins, even if a fuzzy hit elsewhere also scores 100.
+        i = next((j for k in _exact_keys(t) for j in by_name.get(k, ())
+                  if not (exclude and filenames[j] in exclude)), None)
         if i is not None:
-            score = round(best_score)
+            best_score = 100
+        else:
+            best_score, i = _best_for_track(
+                t, entries, norm_index, sorted_index, floor, exclude, filenames
+            )
+        if i is not None:
+            kind = match_kind(round(best_score), filenames[i], t, exact_at, tags[i])
+            # 100 is reserved for identical names; subset and reordered hits top out at 99.
+            score = 100 if kind == "exact" else min(round(best_score), 99)
             matches.append({
                 "track_id": t["id"],
                 "track_name": t.get("name"),
@@ -285,7 +325,7 @@ def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
                 "filename": filenames[i],
                 "path": paths[i],
                 "score": score,
-                "kind": match_kind(score, filenames[i], t, exact_at, tags[i]),
+                "kind": kind,
                 "tags": tags[i] or None,
             })
         if progress_cb is not None and (ti & 63) == 0:  # ~every 64 tracks
