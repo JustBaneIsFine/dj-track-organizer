@@ -39,10 +39,10 @@
   --stripe: rgba(0,0,0,.045);
   --row-line: #9da1a9;
 }
-:root[data-theme="light"] .p4 .star.on, :root[data-theme="light"] .stars-static.p4 { color: #3f9a3f; }
-:root[data-theme="light"] .p3 .star.on, :root[data-theme="light"] .stars-static.p3 { color: #23877b; }
-:root[data-theme="light"] .p2 .star.on, :root[data-theme="light"] .stars-static.p2 { color: #3f736b; }
-:root[data-theme="light"] .p1 .star.on, :root[data-theme="light"] .stars-static.p1 { color: #4f6461; }
+:root[data-theme="light"] .p4 .star.on, :root[data-theme="light"] .stars.p4 .star, :root[data-theme="light"] .stars-static.p4 { color: #3f9a3f; }
+:root[data-theme="light"] .p3 .star.on, :root[data-theme="light"] .stars.p3 .star:nth-child(-n+3), :root[data-theme="light"] .stars-static.p3 { color: #23877b; }
+:root[data-theme="light"] .p2 .star.on, :root[data-theme="light"] .stars.p2 .star:nth-child(-n+2), :root[data-theme="light"] .stars-static.p2 { color: #3f736b; }
+:root[data-theme="light"] .p1 .star.on, :root[data-theme="light"] .stars.p1 .star:nth-child(-n+1), :root[data-theme="light"] .stars-static.p1 { color: #4f6461; }
 /* Light theme runs bolder and crisper than dark: heavier text, solid edges. */
 :root[data-theme="light"] .track, :root[data-theme="light"] .artist { border-bottom-color: var(--row-line); }
 :root[data-theme="light"] .preview .pv { border-bottom-color: var(--row-line); }
@@ -167,11 +167,13 @@ a { color: var(--accent); text-decoration: none; }
 .stars { display: inline-flex; gap: 1px; cursor: pointer; user-select: none; }
 .star { color: var(--star-off); font-size: 13px; line-height: 1; }
 .star.on { color: var(--star); }
-.p4 .star.on { color: #5fd35f; }
-.p3 .star.on { color: #36c7b6; }
-.p2 .star.on { color: #5fa89f; }
-.p1 .star.on { color: #6f8a86; }
-/* Display-only stars (track rows): single text node, no per-star elements. */
+.p4 .star.on, .stars.p4 .star { color: #5fd35f; }
+.p3 .star.on, .stars.p3 .star:nth-child(-n+3) { color: #36c7b6; }
+.p2 .star.on, .stars.p2 .star:nth-child(-n+2) { color: #5fa89f; }
+.p1 .star.on, .stars.p1 .star:nth-child(-n+1) { color: #6f8a86; }
+/* Display-only stars (track rows): four icons, the pN class hides the extras. */
+.stars-static.p0 i, .stars-static.p1 i:nth-child(n+2), .stars-static.p2 i:nth-child(n+3),
+.stars-static.p3 i:nth-child(n+4) { display: none; }
 .stars-static { font-size: 13px; line-height: 1; color: var(--star); white-space: nowrap; user-select: none; min-width: 1px; }
 .stars-static.p4 { color: #5fd35f; }
 .stars-static.p3 { color: #36c7b6; }
@@ -195,6 +197,8 @@ a { color: var(--accent); text-decoration: none; }
 .filterbar .sep { width: 1px; height: 20px; background: var(--border); }
 /* Sort + layout stay pinned right, on their own line once the chips wrap. */
 .filter-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.sort-pair { display: flex; align-items: stretch; gap: 4px; }
+.sort-dir { padding: 0 8px; min-width: 28px; font-size: 14px; line-height: 1; }
 
 .bulkbar {
   display: flex; align-items: center; gap: 8px; padding: 7px 14px;
@@ -215,8 +219,10 @@ a { color: var(--accent); text-decoration: none; }
   opacity: 0; transition: opacity .12s ease; pointer-events: none; }
 .list-spin::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 100vh;
   background: var(--bg); opacity: .6; }
-.list-spin .spin { position: relative; width: 22px; height: 22px; margin-top: 90px; border-width: 3px; }
+.list-spin .spin { position: relative; width: 22px; height: 22px; margin-top: 90px; border-width: 3px; display: none; }
 .swapping > .list-spin { opacity: 1; pointer-events: auto; }
+/* Only spin while shown; a transparent spinner still animated every frame. */
+.swapping > .list-spin .spin { display: inline-block; }
 .track {
   display: flex; align-items: center; gap: 10px; height: var(--row-h);
   padding: 0 14px; border-bottom: 1px solid rgba(42,42,48,.45);
@@ -254,12 +260,12 @@ a { color: var(--accent); text-decoration: none; }
 .mark.later .mark-box { border-radius: 50%;  /* circle = revisit  */
   border-color: color-mix(in srgb, var(--revisit) 55%, black);
   background: color-mix(in srgb, var(--revisit) 16%, transparent); }
-.mark.heard.on .mark-box { background: var(--listened); border-color: var(--listened); color: #04211e; }
-.mark.later.on  .mark-box { background: var(--revisit); border-color: var(--revisit); color: #211a04; }
+.mark.heard.on .mark-box, .track.checked .mark.heard .mark-box { background: var(--listened); border-color: var(--listened); color: #04211e; }
+.mark.later.on .mark-box, .track.revisit .mark.later .mark-box { background: var(--revisit); border-color: var(--revisit); color: #211a04; }
 .mark:hover .mark-box { filter: brightness(1.25); }
 .mark-label { font-size: 9px; line-height: 1; color: var(--text-faint); font-family: var(--sans); }
-.mark.heard.on .mark-label { color: var(--listened); }
-.mark.later.on .mark-label { color: var(--revisit); }
+.mark.heard.on .mark-label, .track.checked .mark.heard .mark-label { color: var(--listened); }
+.mark.later.on .mark-label, .track.revisit .mark.later .mark-label { color: var(--revisit); }
 .track-artist { width: 150px; flex: none; display: flex; align-items: center; gap: 6px; overflow: hidden; }
 .track-artist .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
 /* Stretch the click target to the full row height so it's easy to hit when going fast. */
@@ -281,7 +287,17 @@ a { color: var(--accent); text-decoration: none; }
 .owned-badge { margin-left: 8px; font-size: 10px; color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 10px; padding: 1px 6px; vertical-align: middle; font-family: var(--sans); }
 .revisit-badge { margin-left: 8px; font-size: 10px; color: var(--revisit); border: 1px solid var(--revisit); border-radius: 10px; padding: 1px 6px; vertical-align: middle; font-family: var(--sans); }
 .track.revisit .tname { color: var(--text-dim); }
-.name.merged { color: var(--text-dim); font-style: italic; }
+.name.merged, .track.is-merged .track-artist .name { color: var(--text-dim); font-style: italic; }
+/* Track and artist rows carry their state as classes; these show only what applies. */
+.track:not(.checked) .mark.heard .chk, .track:not(.revisit) .mark.later .mark-box .ic,
+.track:not(.is-repost) .repost-tag, .track:not(.is-merged) .merged-badge,
+.track:not(.revisit) .revisit-badge, .track:not(.is-owned) .owned-badge,
+.track:not(.lk-free-link) .link-badge.free-link, .track:not(.lk-free-sc) .link-badge.free-sc,
+.track:not(.lk-buy) .link-badge.buy, .track:not(.lk-none) .link-badge.unknown,
+.track-list.no-link .link-badge, .track.is-merged .stars-static,
+.artist:not(.show-bar) .heard-bar, .artist:not(.all-done) .done-check,
+.artist-list.no-stars .stars, .artist-list.no-update .artist .mini,
+.artist-list.no-bar .heard-bar, .artist-list.no-done .done-check { display: none; }
 .merged-badge { margin-left: 8px; font-size: 10px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 10px; padding: 1px 6px; vertical-align: middle; font-family: var(--sans); }
 .track .ext { color: var(--text-dim); padding: 2px 6px; opacity: 0; }
 .track:hover .ext { opacity: 1; }
@@ -447,6 +463,7 @@ a { color: var(--accent); text-decoration: none; }
 .filter-chip:hover .ic { opacity: 1; color: var(--danger); }
 .empty-hint { font-size: 12px; margin-top: 10px; }
 .artist-list .empty { padding: 24px 12px; }
+.artist-more { padding: 12px; font-size: 11px; text-align: center; }
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -557,8 +574,8 @@ a { color: var(--accent); text-decoration: none; }
 .fx-nudge { animation: nudge .4s var(--spring); }
 .fx-fly { animation: fly .9s var(--ease); }
 .fx-headbob { animation: head-bob .5s ease-in-out; }
-:is([data-anim="2"],[data-anim="3"]) .done-check.fx-pop { animation: pop .4s var(--spring); }
-:is([data-anim="2"],[data-anim="3"]) .fx-spinning .ic { animation: spin 1s linear infinite; }
+:is([data-anim="2"],[data-anim="3"]) :is(.done-check.fx-pop, .artist.pop .done-check) { animation: pop .4s var(--spring); }
+:is([data-anim="2"],[data-anim="3"]) :is(.fx-spinning, .artist.updating .mini) .ic { animation: spin 1s linear infinite; }
 :is([data-anim="2"],[data-anim="3"]) .fx-rocking .ic-folder { animation: rock .7s ease-in-out infinite; }
 :is([data-anim="2"],[data-anim="3"]) .update-banner .ic-arrow-circle-up { animation: bob .6s ease-in-out .35s 2; }
 :is([data-anim="2"],[data-anim="3"]).anim-ready .modal .ic-warning { animation: shake .5s ease-in-out; }

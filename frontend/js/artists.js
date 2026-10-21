@@ -3,7 +3,10 @@ window.DJ = window.DJ || {};
 window.DJ.artistsMixin = {
   artists: [],
   artistSearch: "",
-  artistSort: "priority",   // priority | new | name | last_scraped
+  artistSort: "priority",   // priority | priority_todo | new | owned | name | last_scraped | added
+  artistSortAsc: false,
+  artistPageSize: 100,   // rows drawn at a time; scrolling near the end draws the next batch
+  artistShown: 100,
   artistUnscraped: false,   // show only artists never scraped (added, not yet scraped)
   selectedArtistIds: [],
   artistPanel: null, // artist object shown in the detail flyout
@@ -14,9 +17,10 @@ window.DJ.artistsMixin = {
   async loadArtists(opts = {}) {
     const seq = (this._artSeq = (this._artSeq || 0) + 1);
     const A = DJ.anim;
+    if (opts.sort || opts.reset) this.artistShown = this.artistPageSize;
     try {
       const base = { include_deleted: this.filters.showDeleted, sort: this.artistSort,
-        unscraped: this.artistUnscraped || undefined };
+        asc: this.artistSortAsc, unscraped: this.artistUnscraped || undefined };
       const q = this.artistSearch.trim();
       let rows;
       if (q) {
@@ -46,6 +50,44 @@ window.DJ.artistsMixin = {
     } catch (e) { this.toast(e.message, "err"); }
   },
   artistMatchCount() { return this.artists.filter((a) => !a._dim).length; },
+  visibleArtists() {
+    return this.artists.length > this.artistShown ? this.artists.slice(0, this.artistShown) : this.artists;
+  },
+  // Row state as classes and one click handler per row; see the track rows.
+  artistClass(a) {
+    let c = "";
+    if (this.artistFilterActive(a.id)) c += " active";
+    if (!a.is_active) c += " inactive";
+    if (a.is_deleted) c += " deleted";
+    if (a._dim) c += " dim";
+    if (a.tracks_total > 0 && a.listened_count === a.tracks_total) c += " complete";
+    const left = a.new_count || a.revisit_count;
+    if (a.tracks_total && (left || a._fin)) c += " show-bar";
+    if (a.tracks_total && !left && !a._fin) c += " all-done";
+    if (a._pop) c += " pop";
+    if (this.isUpdatingArtist(a)) c += " updating";
+    return c;
+  },
+  artistClick(a, e) {
+    const star = e.target.closest(".star");
+    if (star) return this.setPriority(a, +star.dataset.n);
+    if (e.target.closest(".stars")) return;
+    if (e.target.closest("[data-act=update]")) return this.updateSingleArtist(a);
+    this.filterByArtist(a, e.metaKey || e.ctrlKey);
+  },
+  // Counts only, so building HTML here is safe.
+  artistMeta(a) {
+    let h = "";
+    if (this.lay("ar.orig")) h += `<span>${a.originals_total || 0} orig</span>`;
+    if (a.reposts_total && this.lay("ar.reposts")) h += `<span>${a.reposts_total} <i class="ic ic-repeat"></i></span>`;
+    if (a.new_count && this.lay("ar.new")) h += `<span class="new">${a.new_count} new</span>`;
+    if (a.revisit_count && this.lay("ar.revisit")) h += `<span class="rv">${a.revisit_count} <i class="ic ic-clock-counter-clockwise"></i></span>`;
+    return h;
+  },
+  moreArtists(el) {
+    if (this.artistShown < this.artists.length && el.scrollTop + el.clientHeight > el.scrollHeight - 400)
+      this.artistShown += this.artistPageSize;
+  },
   toggleUnscraped() { this.artistUnscraped = !this.artistUnscraped; this.loadArtists(); },
 
   artistFilterChips() {

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
+from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from scraper.anti_detection import (
@@ -216,12 +217,16 @@ _TRACK_EXTRACT_JS = """
 class _DownloadWatch:
     """Reads the downloadable flag out of the api-v2 track JSON the page fetches while
     it scrolls. The Download option itself only exists in the More menu, so the DOM
-    never shows it. Passive: no extra requests are made."""
+    never shows it. Also notes when the page's own list endpoint (``list_re``) answers
+    without a next_href, which means the list is fully loaded. Passive: no extra
+    requests are made."""
 
-    def __init__(self, page):
+    def __init__(self, page, list_re: Optional[str] = None):
         self.page = page
         self.flags: dict[str, bool] = {}
         self._tasks: list = []
+        self._list_re = re.compile(list_re) if list_re else None
+        self.exhausted = False
 
     def start(self) -> "_DownloadWatch":
         self.page.on("response", self._on_response)
@@ -238,6 +243,8 @@ class _DownloadWatch:
             return
         if not isinstance(data, dict):
             return
+        if self._list_re and self._list_re.search(urlsplit(resp.url).path):
+            self.exhausted = not data.get("next_href")
         for it in data.get("collection") or []:
             if not isinstance(it, dict):
                 continue
@@ -263,12 +270,19 @@ class SoundCloud(Platform):
     def matches(self, url: str) -> bool:
         return "soundcloud.com" in url
 
-    async def _goto(self, page, url: str) -> None:
+    async def _goto(self, page, url: str, ready_key: Optional[str] = None) -> None:
+        """Navigate, then wait until the list has rendered or the network goes idle,
+        whichever is first. The page keeps fetching comments and side panels for ~4s
+        after the list is up, so idle alone wastes that on every page."""
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-        try:
-            await page.wait_for_load_state("networkidle", timeout=15000)
-        except Exception:
-            pass  # networkidle can be flaky on infinite-scroll pages
+        waits = [asyncio.ensure_future(page.wait_for_load_state("networkidle", timeout=15000))]
+        if ready_key:
+            waits.append(asyncio.ensure_future(
+                page.wait_for_selector(", ".join(SELECTORS[ready_key]), state="attached", timeout=15000)))
+        done, pending = await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        for w in pending:
+            w.cancel()
+        await asyncio.gather(*waits, return_exceptions=True)  # timeouts are fine here
         await post_nav_pause()
 
     async def _extract(self, page, selector_key: str, prefer_text: bool = False) -> list[dict]:
@@ -284,7 +298,7 @@ class SoundCloud(Platform):
     async def _scroll_and_collect(
         self, page, selector_key: str, *, limit: int = 0, on_progress=None,
         known: Optional[set] = None, stop_after: int = 0, prefer_text: bool = False,
-        with_purchase: bool = False,
+        with_purchase: bool = False, watch: Optional[_DownloadWatch] = None,
     ) -> list[dict]:
         async def count_fn() -> int:
             items = await self._extract(page, selector_key)
@@ -315,7 +329,8 @@ class SoundCloud(Platform):
                 return False
 
         await human_scroll_to_bottom(
-            page, self.cfg, count_fn, on_progress=on_progress, stop_check=stop_check
+            page, self.cfg, count_fn, on_progress=on_progress, stop_check=stop_check,
+            list_done=(lambda: watch.exhausted) if watch else None,
         )
         if with_purchase:
             items = await self._extract_tracks(page)
@@ -329,12 +344,12 @@ class SoundCloud(Platform):
                             known=None, stop_after: int = 0) -> list[ScrapedTrack]:
         base = normalize_artist_url(artist_url)
         owner = _username(base)
-        dl = _DownloadWatch(page).start()
+        dl = _DownloadWatch(page, r"^/users/\d+/tracks$").start()
         try:
-            await self._goto(page, f"{base}/tracks")
+            await self._goto(page, f"{base}/tracks", "track_title")
             items = await self._scroll_and_collect(
                 page, "track_title", on_progress=on_progress, known=known,
-                stop_after=stop_after, with_purchase=True,
+                stop_after=stop_after, with_purchase=True, watch=dl,
             )
         finally:
             await dl.stop()
@@ -356,12 +371,12 @@ class SoundCloud(Platform):
     ) -> list[ScrapedTrack]:
         base = normalize_artist_url(artist_url)
         cap = 0 if limit in (0,) else limit
-        dl = _DownloadWatch(page).start()
+        dl = _DownloadWatch(page, r"^/stream/users/\d+/reposts$").start()
         try:
-            await self._goto(page, f"{base}/reposts")
+            await self._goto(page, f"{base}/reposts", "track_title")
             items = await self._scroll_and_collect(
                 page, "track_title", limit=cap, on_progress=on_progress,
-                known=known, stop_after=stop_after, with_purchase=True,
+                known=known, stop_after=stop_after, with_purchase=True, watch=dl,
             )
         finally:
             await dl.stop()
@@ -373,7 +388,7 @@ class SoundCloud(Platform):
         ]
 
     async def scrape_artist_list(self, page, list_url: str, *, on_progress=None) -> list[ScrapedArtist]:
-        await self._goto(page, list_url)
+        await self._goto(page, list_url, "user_link")
         items = await self._scroll_and_collect(
             page, "user_link", on_progress=on_progress, prefer_text=True
         )

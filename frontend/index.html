@@ -50,6 +50,16 @@
     </div>
   </template>
 
+  <!-- One-time video nudge for installs that onboarded before the video existed -->
+  <template x-if="videoNudge()">
+    <div class="banner feedback-banner" x-cloak>
+      <span><i class="ic ic-play"></i> A short overview video covers how the app works.</span>
+      <span class="spacer"></span>
+      <button class="primary" @click="watchVideoNudge()">Watch video</button>
+      <button class="ghost" @click="dismissVideoNudge()">Dismiss</button>
+    </div>
+  </template>
+
   <!-- One-time feedback nudge -->
   <template x-if="feedbackNudge()">
     <div class="banner feedback-banner" x-cloak>
@@ -180,16 +190,22 @@
       <div class="sidebar-head">
         <div class="sidebar-title">Artists</div>
         <input type="text" style="width:100%" placeholder="filter artists…"
-               x-model="artistSearch" @input="loadArtists()"
-               @keydown.escape.stop="artistSearch=''; loadArtists()" />
-        <select style="width:100%; margin-top:6px" x-model="artistSort" @change="loadArtists({ sort: true })" data-tip="Sort artists">
-          <option value="priority">Sort: Priority</option>
-          <option value="priority_old">Sort: Priority + Oldest</option>
-          <option value="priority_todo">Sort: Priority + most to do</option>
-          <option value="new">Sort: Most to do</option>
-          <option value="name">Sort: Name A-Z</option>
-          <option value="last_scraped">Sort: Last updated</option>
-        </select>
+               x-model="artistSearch" @input="loadArtists({ reset: true })"
+               @keydown.escape.stop="artistSearch=''; loadArtists({ reset: true })" />
+        <div class="sort-pair" style="margin-top:6px">
+          <select style="flex:1; min-width:0" x-model="artistSort" @change="loadArtists({ sort: true })" data-tip="Sort artists">
+            <option value="priority">Priority</option>
+            <option value="priority_todo">Priority + most to do</option>
+            <option value="new">Most to do</option>
+            <option value="owned">Most owned</option>
+            <option value="name">Name</option>
+            <option value="last_scraped">Last updated</option>
+            <option value="added">Date added</option>
+          </select>
+          <button class="sort-dir" @click="artistSortAsc = !artistSortAsc; loadArtists({ sort: true })"
+                  :data-tip="artistSortAsc ? 'Ascending, click to flip' : 'Descending, click to flip'"
+                  :aria-label="artistSortAsc ? 'Ascending' : 'Descending'" x-text="artistSortAsc ? '↑' : '↓'"></button>
+        </div>
         <div style="margin-top:7px; display:flex; gap:6px;">
           <button class="mini" :class="{ 'filter-on': selectedArtistIds.length || artistSearch.trim() }" @click="clearArtistFilter()" :disabled="!selectedArtistIds.length && !artistSearch.trim()"
                   x-text="selectedArtistIds.length ? ('Clear filter (' + selectedArtistIds.length + ')') : 'Clear filter'"></button>
@@ -205,7 +221,7 @@
           </div>
         </div>
       </div>
-      <div class="artist-list">
+      <div class="artist-list" :class="{ 'no-stars': !lay('ar.stars'), 'no-update': !lay('ar.update'), 'no-bar': !lay('ar.bar'), 'no-done': !lay('ar.done') }" @scroll.passive="moreArtists($el)">
         <div class="empty" x-show="!artistMatchCount()">
           <template x-if="!artistFilterChips().length"><div>No artists yet. Import or add one.</div></template>
           <template x-if="artistFilterChips().length">
@@ -221,34 +237,27 @@
             </div>
           </template>
         </div>
-        <template x-for="a in artists" :key="a.id">
-          <div class="artist" :data-k="a.id" :class="{ active: artistFilterActive(a.id), inactive: !a.is_active, deleted: a.is_deleted, dim: a._dim, complete: a.tracks_total>0 && a.listened_count===a.tracks_total }"
-               @click="filterByArtist(a, $event.metaKey || $event.ctrlKey)"
-               @contextmenu.prevent="openArtistPanel(a)">
+        <template x-for="a in visibleArtists()" :key="a.id">
+          <div class="artist" :data-k="a.id" :class="artistClass(a)"
+               @click="artistClick(a, $event)" @contextmenu.prevent="openArtistPanel(a)">
             <div class="artist-row1">
-              <span class="stars" :class="'p'+a.priority" x-show="lay('ar.stars')" @click.stop>
-                <template x-for="i in starsArr" :key="i">
-                  <span class="star" :class="{ on: i <= a.priority }" @click="setPriority(a, i)"><i class="ic ic-star-fill"></i></span>
-                </template>
+              <span class="stars" :class="'p'+a.priority">
+                <span class="star" data-n="1"><i class="ic ic-star-fill"></i></span><span class="star" data-n="2"><i class="ic ic-star-fill"></i></span><span class="star" data-n="3"><i class="ic ic-star-fill"></i></span><span class="star" data-n="4"><i class="ic ic-star-fill"></i></span>
               </span>
               <span class="artist-name" x-text="a.name"></span>
-              <button class="mini" data-tour="artist-update" x-show="lay('ar.update')" :class="{ 'fx-spinning': isUpdatingArtist(a) }" @click.stop="updateSingleArtist(a)" data-tip="Update this artist" aria-label="Update this artist"><i class="ic ic-arrows-clockwise"></i></button>
+              <button class="mini" data-act="update" data-tour="artist-update" data-tip="Update this artist" aria-label="Update this artist"><i class="ic ic-arrows-clockwise"></i></button>
             </div>
-            <div class="artist-meta">
-              <span x-show="lay('ar.orig')" x-text="(a.originals_total||0) + ' orig'"></span>
-              <span x-show="a.reposts_total && lay('ar.reposts')" ><span x-text="a.reposts_total"></span> <i class="ic ic-repeat"></i></span>
-              <span class="new" x-show="a.new_count && lay('ar.new')" x-text="a.new_count + ' new'"></span>
-              <span class="rv" x-show="a.revisit_count && lay('ar.revisit')" ><span x-text="a.revisit_count"></span> <i class="ic ic-clock-counter-clockwise"></i></span>
-            </div>
+            <div class="artist-meta" x-html="artistMeta(a)"></div>
             <!-- Counts (above) are the real signal; this thin bar is just an
-                 ambient sense of overall progress. ✓ when nothing's left. -->
-            <div class="heard-bar" x-show="a.tracks_total && (a.new_count || a.revisit_count || a._fin) && lay('ar.bar')"
-                 :data-tip="`${a.listened_count||0}/${a.tracks_total||0} heard`">
+                 ambient sense of overall progress. A check shows when nothing's left. -->
+            <div class="heard-bar" :data-tip="`${a.listened_count||0}/${a.tracks_total||0} heard`">
               <div :style="`width:${a._fin ? 100 : segPct(a,'listened_count')}%`"></div>
             </div>
-            <div class="done-check" :class="{ 'fx-pop': a._pop }" x-show="a.tracks_total && !a.new_count && !a.revisit_count && !a._fin && lay('ar.done')"><i class="ic ic-check"></i> all heard</div>
+            <div class="done-check"><i class="ic ic-check"></i> all heard</div>
           </div>
         </template>
+        <div class="artist-more muted" x-show="artists.length > artistShown"
+             x-text="'Showing ' + artistShown + ' of ' + artists.length + ', scroll for more'"></div>
       </div>
       <button class="sidebar-feedback" x-show="meta.feedback_key" x-cloak @click="openFeedback('suggestion')"><i class="ic ic-envelope-simple"></i> Suggest a feature</button>
     </div>
@@ -308,15 +317,16 @@
         <span class="chip" x-show="lay('filter.deleted')" :class="{on: filters.showDeleted}" @click="toggleShowDeleted()">Show deleted</span>
         <span class="chip" x-show="lay('filter.owned')" :class="{on: filters.showOwned}" @click="toggleShowOwned()">Show owned <span class="chip-count" data-roll x-text="chipStats.owned||0"></span></span>
         <div class="filter-right">
-        <select x-model="sort" @change="setSort(sort)">
-          <option value="priority_new_first">Priority + Newest</option>
-          <option value="priority_old_first">Priority + Oldest</option>
-          <option value="artist_az">Artist A-Z</option>
-          <option value="track_az">Track A-Z</option>
-          <option value="date_added">Date added</option>
-          <option value="last_seen">Last seen</option>
-          <option value="owned">Owned</option>
-        </select>
+        <div class="sort-pair">
+          <select x-model="sort" @change="setSort(sort)" data-tip="Sort tracks">
+            <option value="priority">Priority</option>
+            <option value="artist">Artist</option>
+            <option value="date_added">Date added</option>
+          </select>
+          <button class="sort-dir" @click="flipSort()"
+                  :data-tip="sortAsc ? 'Ascending, click to flip' : 'Descending, click to flip'"
+                  :aria-label="sortAsc ? 'Ascending' : 'Descending'" x-text="sortAsc ? '↑' : '↓'"></button>
+        </div>
         <select x-model="density" @change="setDensity(density)">
           <option value="comfortable">Comfortable</option>
           <option value="compact">Compact</option>
@@ -348,35 +358,38 @@
       </div>
 
       <!-- Track list -->
-      <div class="track-list" :class="{ swapping: listSwapping }">
+      <div class="track-list" :class="{ swapping: listSwapping, 'no-link': !lay('tr.link') }" @scroll.passive="moreTracks($el)">
         <span class="list-spin"><span class="spin"></span></span>
+        <!-- Row state lives in rowClass() and CSS shows the matching marks and badges;
+             each binding costs about 70us per row, so rows keep as few as possible. -->
         <template x-for="(t, i) in shownTracks()" :key="t.id">
-          <div class="track" :data-k="t.id" :class="{ checked: t.is_checked, revisit: t.is_revisit, deleted: t.is_deleted, isnew: isNew(t) }"
+          <div class="track" :data-k="t.id" :class="rowClass(t)"
                @contextmenu="openCtx($event, t)" @click="rowClick(t, i, $event)">
             <div class="row-marks">
-              <span class="mark heard" :class="{on: t.is_checked}" @click.stop="toggleCheck(t)" data-tip="Mark listened">
-                <span class="mark-box"><svg class="chk" viewBox="0 0 256 256" x-show="t.is_checked"><polyline points="40 144 96 200 224 72" pathLength="1"/></svg></span>
+              <span class="mark heard" data-act="heard" data-tip="Mark listened">
+                <span class="mark-box"><svg class="chk" viewBox="0 0 256 256"><polyline points="40 144 96 200 224 72" pathLength="1"/></svg></span>
                 <span class="mark-label">Heard</span>
               </span>
-              <span class="mark later" :class="{on: t.is_revisit}" @click.stop="toggleRevisit(t)" data-tip="Revisit later">
-                <span class="mark-box"><i class="ic ic-clock-counter-clockwise" x-show="t.is_revisit"></i></span>
+              <span class="mark later" data-act="later" data-tip="Revisit later">
+                <span class="mark-box"><i class="ic ic-clock-counter-clockwise"></i></span>
                 <span class="mark-label">Later</span>
               </span>
             </div>
             <span class="track-artist">
-              <span class="stars-static" :class="'p'+t.artist_priority" x-show="!(t.group_size > 1)" ><template x-for="i in Math.max(0, Math.min(4, t.artist_priority || 0))" :key="i"><i class="ic ic-star-fill"></i></template></span>
-              <span class="name" :class="{ merged: t.group_size > 1 }" x-text="t.group_size > 1 ? 'Various / Merged' : t.artist_name"></span>
+              <span class="stars-static" :class="'p' + Math.max(0, Math.min(4, t.artist_priority || 0))"><i class="ic ic-star-fill"></i><i class="ic ic-star-fill"></i><i class="ic ic-star-fill"></i><i class="ic ic-star-fill"></i></span>
+              <span class="name" x-text="t.group_size > 1 ? 'Various / Merged' : t.artist_name"></span>
             </span>
             <span class="track-name">
-              <span class="repost-tag" x-show="t.is_repost"><i class="ic ic-repeat"></i></span><span class="tname" @click.stop="openTrack(t)" x-text="t.name"></span>
-              <span class="merged-badge" x-show="t.group_size > 1" x-cloak x-text="'shared by ' + t.group_size"></span>
-              <span class="revisit-badge" x-show="t.is_revisit" x-cloak><i class="ic ic-clock-counter-clockwise"></i> revisit</span>
-              <span class="link-badge free" x-show="lay('tr.link') && linkKind(t)==='free'" x-cloak :data-tip="_freeLink(t) ? 'Has a free download link' : 'Download file is in the More menu on SoundCloud'"><i class="ic ic-download-simple"></i> free</span>
-              <span class="link-badge buy" x-show="lay('tr.link') && linkKind(t)==='buy'" x-cloak data-tip="Links to a store"><i class="ic ic-shopping-cart-simple"></i> buy</span>
-              <span class="link-badge unknown" x-show="lay('tr.link') && !linkKind(t)" x-cloak data-tip="No free or buy link found"><i class="ic ic-question"></i></span>
-              <span class="owned-badge" x-show="t.is_owned" x-cloak><i class="ic ic-check"></i> owned</span>
+              <span class="repost-tag"><i class="ic ic-repeat"></i></span><span class="tname" data-act="open" x-text="t.name"></span>
+              <span class="merged-badge" x-text="t.group_size > 1 ? 'shared by ' + t.group_size : ''"></span>
+              <span class="revisit-badge"><i class="ic ic-clock-counter-clockwise"></i> revisit</span>
+              <span class="link-badge free free-link" data-tip="Has a free download link"><i class="ic ic-download-simple"></i> free</span>
+              <span class="link-badge free free-sc" data-tip="Download file is in the More menu on SoundCloud"><i class="ic ic-download-simple"></i> free</span>
+              <span class="link-badge buy" data-tip="Links to a store"><i class="ic ic-shopping-cart-simple"></i> buy</span>
+              <span class="link-badge unknown" data-tip="No free or buy link found"><i class="ic ic-question"></i></span>
+              <span class="owned-badge"><i class="ic ic-check"></i> owned</span>
             </span>
-            <span class="ext" @click.stop="openTrack(t)" data-tip="Open in browser"><i class="ic ic-arrow-square-out"></i></span>
+            <span class="ext" data-act="open" data-tip="Open in browser"><i class="ic ic-arrow-square-out"></i></span>
           </div>
         </template>
         <div class="empty" x-show="!tracks.length && !tracksLoading && tracksLoaded">
@@ -404,7 +417,7 @@
         <div class="empty" x-show="tracksLoading && tracksLoaded && !tracks.length"><span class="spin"></span> loading…</div>
       </div>
       <div class="track-foot">
-        Showing <b x-text="tracks.length"></b> of <b x-text="tracksTotal"></b> tracks
+        Showing <b x-text="tracks.length"></b> of <b x-text="tracksTotal ?? '…'"></b> tracks
       </div>
     </div>
 
@@ -620,7 +633,7 @@
           <div class="spin" style="width:32px;height:32px"></div>
           <div x-show="ownedScan.phase==='reading'">Reading file names… <b x-text="ownedScan.count"></b> so far</div>
           <div x-show="ownedScan.phase==='matching'" style="width:100%">
-            <div>Matching <b x-text="ownedScan.count"></b> files against your library…</div>
+            <div x-text="ownedScan.tags && ownedScan.percent < 50 ? 'Reading artist and title tags…' : 'Matching ' + ownedScan.count + ' files against your library…'"></div>
             <div class="prog" style="margin-top:8px"><div :style="`width:${ownedScan.percent||0}%`"></div></div>
             <div class="muted" style="font-size:11px; margin-top:4px"><span x-text="ownedScan.percent||0"></span>%</div>
           </div>
@@ -658,7 +671,7 @@
               </template>
             </div>
             <div class="foot">
-              <span class="muted" style="font-size:12px; margin-right:auto">Your files are never modified. Only names are read.</span>
+              <span class="muted" style="font-size:12px; margin-right:auto">Your files are never modified. Only names and artist/title tags are read.</span>
               <button class="primary" @click="pickFolder()" :disabled="ownedBusy"><i class="ic ic-folder"></i> Check a folder…</button>
             </div>
           </div>
@@ -714,6 +727,7 @@
                     <div class="cs-side" :class="'k-' + it.kind">
                       <div class="cs-side-label">Your file</div>
                       <div class="cs-name" x-html="checkBold(it.filename, checkScTitle(it))"></div>
+                      <div class="muted" style="font-size:12px" x-show="it.tags">Tags: <span x-text="it.tags"></span></div>
                       <button class="mini ghost" x-show="it.has_path" @click="playCheckItem(it)"><i class="ic ic-play"></i> Play <kbd>P</kbd></button>
                       <span class="muted" style="font-size:11px" x-show="!it.has_path">Not playable: this check was made with the browser folder picker.</span>
                     </div>
@@ -1105,7 +1119,7 @@
             <span class="muted" style="font-size:11px">Under 900px wide, for sitting next to a browser.</span>
           </div>
           <div class="field">
-            <label>Tracks shown per view</label>
+            <label>Tracks loaded at a time</label>
             <select x-model="settings.track_page_size" @change="setTrackPageSize(settings.track_page_size)">
               <option value="100">100 (recommended)</option>
               <option value="250">250</option>
@@ -1113,7 +1127,17 @@
               <option value="750">750</option>
               <option value="1000">1000 (max)</option>
             </select>
-            <div class="muted" style="font-size:11px; margin-top:4px">Lower scrolls smoother. Filter by artist or status to reach the rest; the footer counts them.</div>
+            <div class="muted" style="font-size:11px; margin-top:4px">The next batch loads when you scroll to the end of the list. Lower opens faster.</div>
+          </div>
+          <div class="field">
+            <label>Artists shown at a time</label>
+            <select x-model="settings.artist_page_size" @change="setArtistPageSize(settings.artist_page_size)">
+              <option value="100">100 (recommended)</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+              <option value="1000">1000</option>
+            </select>
+            <div class="muted" style="font-size:11px; margin-top:4px">The next batch loads when you scroll to the end of the artist list.</div>
           </div>
           </div>
 

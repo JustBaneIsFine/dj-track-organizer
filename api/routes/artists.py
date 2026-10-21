@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from api.deps import get_db
+from api.deps import get_db, get_read_db
 from db import queries
 from scraper.platforms.soundcloud import validate_artist_url
 
@@ -42,12 +42,13 @@ async def list_artists(
     include_deleted: bool = False,
     search: Optional[str] = None,
     sort: str = "priority",
+    asc: bool = False,
     artist_id: Optional[str] = None,  # comma-separated: refresh just these
     unscraped: bool = False,
-    db=Depends(get_db),
+    db=Depends(get_read_db),
 ):
     return await queries.list_artists(
-        db, include_deleted=include_deleted, search=search, sort=sort,
+        db, include_deleted=include_deleted, search=search, sort=sort, asc=asc,
         artist_ids=_parse_ids(artist_id), unscraped=unscraped,
     )
 

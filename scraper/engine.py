@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
 from scraper.anti_detection import (
     TimingConfig,
-    inter_artist_delay,
+    pause_s,
     random_user_agent,
-    reading_pause,
     VIEWPORT,
 )
 from scraper.platforms.base import Platform
@@ -300,6 +300,14 @@ class ScrapeEngine:
                     await asyncio.sleep(backoffs[i])
         raise last_exc  # type: ignore[misc]
 
-    async def pace_between_artists(self) -> None:
-        await reading_pause()
-        await inter_artist_delay(self.cfg)
+    def artist_finished(self) -> None:
+        """Start the gap before the next artist. Time spent before that artist
+        arrives (review, an empty queue) counts toward it."""
+        self._next_at = time.monotonic() + pause_s(self.cfg)
+
+    async def wait_for_pace(self) -> None:
+        while not self.control.abandoned.is_set():
+            left = getattr(self, "_next_at", 0) - time.monotonic()
+            if left <= 0:
+                return
+            await asyncio.sleep(min(left, 0.5))

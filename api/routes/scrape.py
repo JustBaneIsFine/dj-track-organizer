@@ -100,6 +100,9 @@ async def progress(sid: int):
         return StreamingResponse(empty(), media_type="text/event-stream")
 
     async def event_stream():
+        if job.pending_decision:
+            # A card shown on an earlier stream; this viewer has not seen it.
+            yield f"data: {json.dumps(job.pending_decision)}\n\n"
         while True:
             try:
                 event = await asyncio.wait_for(job.events.get(), timeout=20.0)
@@ -149,6 +152,9 @@ async def abandon(sid: int, save: bool = False, db=Depends(get_db)):
     ok = manager.abandon(sid, save=save)
     if not ok:  # not live; just mark in DB
         await queries.update_session(db, sid, status="paused" if save else "abandoned")
+    elif save:
+        # Queued artists may keep scraping for a while; it is resumable meanwhile.
+        await queries.update_session(db, sid, status="paused")
     return {"ok": True}
 
 

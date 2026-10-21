@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from api.deps import get_db
+from api.deps import get_db, get_read_db
 from db import queries
 
 router = APIRouter(prefix="/api/tracks", tags=["tracks"])
@@ -42,8 +42,7 @@ def _parse_ids(value: Optional[str]) -> Optional[list[int]]:
     return out or None
 
 
-@router.get("")
-async def list_tracks(
+async def track_filters(
     artist_id: Optional[str] = Query(None, description="comma-separated artist ids"),
     is_checked: Optional[int] = None,
     is_revisit: Optional[int] = None,
@@ -57,13 +56,10 @@ async def list_tracks(
     priority_in: Optional[str] = Query(None, description="comma-separated exact star levels (0-4)"),
     run_id: Optional[int] = Query(None, description="show only tracks a saved run found new"),
     search: Optional[str] = None,
-    sort: str = "priority_new_first",
-    limit: int = Query(500, ge=1, le=100_000),
-    offset: int = Query(0, ge=0),
-    db=Depends(get_db),
-):
+    db=Depends(get_read_db),
+) -> dict:
+    """Query filters shared by the list and the count."""
     artist_ids = _parse_ids(artist_id)
-    stars = _parse_ids(priority_in)  # "0,1,2" → [0,1,2]; level 0 = no stars
     track_ids = None
     if run_id:
         run = await queries.get_run_result(db, run_id)
@@ -74,24 +70,35 @@ async def list_tracks(
     # Merge cross-artist repost duplicates only in the unfiltered (no specific
     # artist) view; per-artist views keep every row intact. A run view lists the
     # exact rows it added, so merging would hide some of them.
-    merge = not artist_ids and not track_ids
-    items = await queries.list_tracks(
-        db, artist_ids=artist_ids, is_checked=is_checked, is_revisit=is_revisit,
+    return dict(
+        artist_ids=artist_ids, is_checked=is_checked, is_revisit=is_revisit,
         include_deleted=include_deleted, is_deleted=is_deleted,
         include_owned=include_owned, is_owned=is_owned,
-        is_repost=is_repost, link=link, priority_min=priority_min, priority_in=stars,
-        track_ids=track_ids,
-        search=search, sort=sort, merge=merge, limit=limit, offset=offset,
+        is_repost=is_repost, link=link, priority_min=priority_min,
+        priority_in=_parse_ids(priority_in),  # "0,1,2" -> [0,1,2]; level 0 = no stars
+        track_ids=track_ids, search=search,
+        merge=not artist_ids and not track_ids,
     )
-    total = await queries.count_tracks(
-        db, artist_ids=artist_ids, is_checked=is_checked, is_revisit=is_revisit,
-        include_deleted=include_deleted, is_deleted=is_deleted,
-        include_owned=include_owned, is_owned=is_owned,
-        is_repost=is_repost, link=link, priority_min=priority_min, priority_in=stars,
-        track_ids=track_ids,
-        search=search, merge=merge,
-    )
-    return {"items": items, "total": total, "limit": limit, "offset": offset, "merged": merge}
+
+
+@router.get("/count")
+async def count_tracks(f: dict = Depends(track_filters), db=Depends(get_read_db)):
+    return {"total": await queries.count_tracks(db, **f)}
+
+
+@router.get("")
+async def list_tracks(
+    sort: str = "priority",
+    asc: bool = False,
+    limit: int = Query(500, ge=1, le=100_000),
+    offset: int = Query(0, ge=0),
+    with_total: bool = True,  # the app asks /count separately so the page shows sooner
+    f: dict = Depends(track_filters),
+    db=Depends(get_read_db),
+):
+    items = await queries.list_tracks(db, sort=sort, asc=asc, limit=limit, offset=offset, **f)
+    total = await queries.count_tracks(db, **f) if with_total else None
+    return {"items": items, "total": total, "limit": limit, "offset": offset, "merged": f["merge"]}
 
 
 async def _affected_artists(db, track_ids: list[int], propagate_group: bool) -> list[dict]:

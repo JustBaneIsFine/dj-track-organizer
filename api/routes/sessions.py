@@ -36,7 +36,8 @@ async def resume_session(sid: int, db=Depends(get_db)):
     s = await queries.get_session(db, sid)
     if not s:
         raise HTTPException(404, "session not found")
-    if manager.get(sid):
+    if manager.continue_live(sid):
+        await queries.update_session(db, sid, status="in_progress")
         return {"session_id": sid, "already_live": True}
     sid2 = await manager.relaunch(db, sid)
     return {"session_id": sid2}

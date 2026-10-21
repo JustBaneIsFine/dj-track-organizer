@@ -10,6 +10,7 @@ window.DJ.FEEDBACK_KINDS = [
 
 window.DJ.feedbackMixin = {
   showFeedback: false,
+  _videoNudgeClosed: false,
   fb: { kind: "suggestion", message: "", email: "" },
   fbState: "idle",   // idle | sending | sent | error
   fbError: "",
@@ -72,8 +73,25 @@ window.DJ.feedbackMixin = {
   feedbackNudge() {
     return !!this.meta.feedback_key
       && this.settings.feedback_nudge !== "done"
+      && !this.videoNudge() && !this._videoNudgeClosed  // one banner per open, video first
       && !!this.stats.last_update
       && (this.stats.listened || 0) >= 25;
+  },
+
+  // One-time banner for existing installs; new ones are offered the video while onboarding.
+  videoNudge() {
+    return !!this.meta.tutorial_url
+      && this.settings.video_nudge !== "done"
+      && !!this.stats.last_update;
+  },
+  watchVideoNudge() {
+    window.open(this.meta.tutorial_url, "_blank");
+    this.dismissVideoNudge();
+  },
+  dismissVideoNudge() {
+    this._videoNudgeClosed = true;
+    this.settings.video_nudge = "done";
+    api.patchSettings({ video_nudge: "done" }).catch(() => {});
   },
 
   dismissFeedbackNudge() {

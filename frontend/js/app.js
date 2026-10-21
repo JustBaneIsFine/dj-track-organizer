@@ -9,7 +9,8 @@ function djApp() {
     settings: {},
     stats: {},          // global (drives the sidebar header)
     chipStats: {},      // filter-aware (drives the chip counts; = stats when no artist selected)
-    sort: "priority_new_first",
+    sort: "priority",
+    sortAsc: false,
     density: "comfortable",
     uiScale: 100,
     trackPageSize: 100,
@@ -79,11 +80,12 @@ function djApp() {
     accentPresets: ["#5fd35f", "#00e0c8", "#7aa2f7", "#e0556a", "#e0b84a", "#9d7cd8"],
 
     _applyUiFromSettings() {
-      this.sort = this.settings.default_sort || "priority_new_first";
+      this.sort = this.settings.default_sort || "priority";
       this.density = this.settings.ui_density || "comfortable";
       this.uiScale = parseInt(this.settings.ui_scale || "100") || 100;
       this._applyUiScale();
       this.trackPageSize = parseInt(this.settings.track_page_size || "100") || 100;
+      this.artistPageSize = this.artistShown = parseInt(this.settings.artist_page_size || "100") || 100;
       this._loadLayout();
       this.theme = this.settings.theme || "dark";
       this.accent = this.settings.accent_color || "#5fd35f";
@@ -97,8 +99,13 @@ function djApp() {
         const saved = JSON.parse(this.settings.ui_state || "{}");
         if (saved.filters) Object.assign(this.filters, saved.filters);
         if (saved.sort) this.sort = saved.sort;
+        if (saved.sortAsc) this.sortAsc = true;
         if (saved.density) this.density = saved.density;
       } catch (e) {}
+      // Sorts from before the direction toggle.
+      if (this.sort === "priority_old_first") this.sortAsc = true;
+      this.sort = { priority_new_first: "priority", priority_old_first: "priority", artist_az: "artist" }[this.sort] || this.sort;
+      if (!["priority", "artist", "date_added"].includes(this.sort)) this.sort = "priority";
       this._dropHiddenFilters();   // saved filters may target hidden controls
     },
 
@@ -106,7 +113,7 @@ function djApp() {
       clearTimeout(this._persistTimer);
       this._persistTimer = setTimeout(() => {
         api.patchSettings({
-          ui_state: JSON.stringify({ filters: this.filters, sort: this.sort, density: this.density }),
+          ui_state: JSON.stringify({ filters: this.filters, sort: this.sort, sortAsc: this.sortAsc, density: this.density }),
           ui_density: this.density, default_sort: this.sort,
           show_deleted: String(this.filters.showDeleted),
         }).catch(() => {});
@@ -127,6 +134,7 @@ function djApp() {
     starActive(n) { return this.filters.stars.includes(n); },
     toggleShowDeleted() { this.filters.showDeleted = !this.filters.showDeleted; this.loadArtists(); this.reload(); },
     setSort(s) { this.sort = s; this.reload(); },
+    flipSort() { this.sortAsc = !this.sortAsc; this.reload(); },
     setDensity(d) { this.density = d; this._persistUi(); this._dropHiddenFilters(); },
     _applyUiScale() { document.documentElement.style.zoom = (this.uiScale || 100) / 100; },
     setUiScale(v) {
@@ -135,8 +143,7 @@ function djApp() {
       this._applyUiScale();
       api.patchSettings({ ui_scale: String(this.uiScale) }).catch(() => {});
     },
-    // Max tracks fetched/rendered per view. Lower = smoother; you reach tracks by
-    // filtering (artist/status), so the cap rarely bites. Hard-bounded 100-1000.
+    // Tracks fetched per batch; scrolling to the end fetches the next. Bounded 100-1000.
     setTrackPageSize(v) {
       let n = parseInt(v) || 100;
       n = Math.max(100, Math.min(1000, n));
@@ -144,6 +151,12 @@ function djApp() {
       this.settings.track_page_size = String(n);
       api.patchSettings({ track_page_size: String(n) }).catch(() => {});
       this.loadTracks();
+    },
+    setArtistPageSize(v) {
+      const n = Math.max(50, Math.min(1000, parseInt(v) || 100));
+      this.artistPageSize = this.artistShown = n;
+      this.settings.artist_page_size = String(n);
+      api.patchSettings({ artist_page_size: String(n) }).catch(() => {});
     },
 
     // theming
@@ -467,8 +480,15 @@ function djApp() {
         this.loadTracks();
       } catch (e) { this.toast(e.message.replace(/^\d+: /, ""), "err"); }
     },
+    // The app window can't take a browser download, so the server shows a Save dialog
+    // and writes the file. In browser mode it says so and the page downloads it.
     async doExport() {
       try {
+        const r = await api.exportSave();
+        if (r.native) {
+          if (r.saved) this.toast("Backup saved to " + r.saved);
+          return;
+        }
         const data = await api.exportAll();
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
         const a = document.createElement("a");

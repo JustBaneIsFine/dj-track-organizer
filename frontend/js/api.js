@@ -29,6 +29,7 @@ window.api = (() => {
       return j("/api/stats" + (qs ? "?" + qs : ""));
     },
     exportAll: () => j("/api/export"),
+    exportSave: () => j("/api/export/save", { method: "POST" }),
     importAll: (data) => j("/api/import", { method: "POST", ...body(data) }),
     purgeDeleted: () => j("/api/purge/deleted", { method: "DELETE" }),
     resetAll: () => j("/api/reset", { method: "POST" }),
@@ -39,6 +40,7 @@ window.api = (() => {
       if (q.include_deleted) p.set("include_deleted", "true");
       if (q.search) p.set("search", q.search);
       if (q.sort) p.set("sort", q.sort);
+      if (q.asc) p.set("asc", "true");
       if (q.artist_id) p.set("artist_id", q.artist_id);
       if (q.unscraped) p.set("unscraped", "true");
       return j("/api/artists?" + p.toString());
@@ -55,6 +57,14 @@ window.api = (() => {
         p.set(k, v);
       });
       return j("/api/tracks?" + p.toString());
+    },
+    countTracks: (q = {}) => {
+      const p = new URLSearchParams();
+      Object.entries(q).forEach(([k, v]) => {
+        if (v === null || v === undefined || v === "" || ["sort", "asc", "limit", "offset", "with_total"].includes(k)) return;
+        p.set(k, v);
+      });
+      return j("/api/tracks/count?" + p.toString());
     },
     patchTrack: (id, b) => j(`/api/tracks/${id}`, { method: "PATCH", ...body(b) }),
     bulkTracks: (b) => j("/api/tracks/bulk", { method: "PATCH", ...body(b) }),

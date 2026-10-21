@@ -1,16 +1,21 @@
 """Settings + data-management endpoints (stats, export, import, purge)."""
 from __future__ import annotations
 
+import asyncio
+import datetime
+import json
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from api.deps import get_db
+from api.deps import get_db, get_read_db
 from db import queries
 from db.schema import connect
 import config
+import folder_pick
 
 router = APIRouter(tags=["settings"])
 
@@ -40,6 +45,7 @@ _INT_SETTINGS = {
     "owned_fuzzy_from": (0, 100, "Show fuzzy matches from"),
     "saved_runs_keep": (1, 100, "Saved runs to keep"),
     "track_page_size": (1, 5_000, "Tracks per view"),
+    "artist_page_size": (1, 5_000, "Artists at a time"),
     "ui_scale": (50, 300, "UI scale"),
 }
 
@@ -86,7 +92,7 @@ def _parse_ids(value):
 
 
 @router.get("/api/stats")
-async def stats(artist_id: str | None = None, run_id: int | None = None, db=Depends(get_db)):
+async def stats(artist_id: str | None = None, run_id: int | None = None, db=Depends(get_read_db)):
     track_ids = None
     if run_id:
         run = await queries.get_run_result(db, run_id)
@@ -97,6 +103,24 @@ async def stats(artist_id: str | None = None, run_id: int | None = None, db=Depe
 @router.get("/api/export")
 async def export_all(db=Depends(get_db)):
     return await queries.export_all(db)
+
+
+@router.post("/api/export/save")
+async def export_save(db=Depends(get_db)):
+    """Native window: ask where to save, then write the backup there. Returns
+    native=false in browser mode, where the page downloads it instead."""
+    if not folder_pick.has_native_window():
+        return {"native": False}
+    name = f"dj-organizer-backup-{datetime.date.today().isoformat()}.json"
+    path = await asyncio.get_event_loop().run_in_executor(None, folder_pick.ask_save_path, name)
+    if not path:
+        return {"native": True, "cancelled": True}
+    data = await queries.export_all(db)
+    try:
+        await asyncio.to_thread(Path(path).write_text, json.dumps(data, indent=2), "utf-8")
+    except OSError as e:
+        raise HTTPException(500, f"Could not save the backup: {e}")
+    return {"native": True, "saved": path}
 
 
 @router.post("/api/import")

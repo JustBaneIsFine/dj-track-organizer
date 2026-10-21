@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "dj-organizer"
-APP_VERSION = "0.3.2"
+APP_VERSION = "0.3.3"
 
 # owner/repo on GitHub; used for the update check and About links.
 GITHUB_REPO = "JustBaneIsFine/dj-track-organizer"
@@ -73,12 +73,13 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "scroll_step_px": "400",
     "headless_mode": "true",
     "browser_profile_path": "",
-    "default_sort": "priority_new_first",
+    "default_sort": "priority",
     "show_deleted": "false",
     "show_reposts": "true",
     "ui_density": "comfortable",
     "ui_scale": "100",          # UI zoom percent: 100 | 110 | 125 | 150
-    "track_page_size": "100",   # max tracks rendered per view: 100 | 250 | 500 | 750 | 1000
+    "artist_page_size": "100",  # artists drawn per batch in the sidebar
+    "track_page_size": "100",  # max tracks rendered per view: 100 | 250 | 500 | 750 | 1000
     "scrape_stop_on_known": "true",  # stop scraping an artist once we hit known tracks
     "scrape_stop_known_count": "5",  # how many consecutive already-saved tracks before stopping
     "interactive_mode": "true",

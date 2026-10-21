@@ -210,6 +210,7 @@ async def list_artists(
     include_deleted: bool = False,
     search: Optional[str] = None,
     sort: str = "priority",
+    asc: bool = False,
     artist_ids: Optional[list[int]] = None,
     unscraped: bool = False,
 ) -> list[dict]:
@@ -238,41 +239,36 @@ async def list_artists(
         where.append("(" + " OR ".join(ors) + ")")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
+    # asc flips the sort's main key. Priority sorts keep high stars on top and flip
+    # the key inside each level instead.
+    d = "ASC" if asc else "DESC"
+    az = "DESC" if asc else "ASC"
     order = {
-        "priority": "a.priority DESC, a.name COLLATE NOCASE ASC",
-        "priority_old": "a.priority DESC, a.added_at ASC",
-        "name": "a.name COLLATE NOCASE ASC",
-        "added": "a.added_at DESC",
-        "last_scraped": "a.last_scraped DESC",
-        "new": "(new_count + revisit_count) DESC, a.priority DESC, a.name COLLATE NOCASE ASC",
-        # Highest priority first, and within each priority level the most to do first.
-        "priority_todo": "a.priority DESC, (new_count + revisit_count) DESC, a.name COLLATE NOCASE ASC",
-    }.get(sort, "a.priority DESC, a.name COLLATE NOCASE ASC")
+        "priority": f"a.priority DESC, a.name COLLATE NOCASE {az}",
+        "name": f"a.name COLLATE NOCASE {az}",
+        "added": f"a.added_at {d}",
+        "last_scraped": f"a.last_scraped {d}",
+        "new": f"(new_count + revisit_count) {d}, a.priority DESC, a.name COLLATE NOCASE ASC",
+        "owned": f"owned_count {d}, a.priority DESC, a.name COLLATE NOCASE ASC",
+        "priority_todo": f"a.priority DESC, (new_count + revisit_count) {d}, a.name COLLATE NOCASE ASC",
+    }.get(sort, f"a.priority DESC, a.name COLLATE NOCASE {az}")
 
-    # Live counts (cheap counts; fine for thousands of artists locally).
+    # Counts come from artist_counts, which triggers keep current (migration 018).
     # Originals vs reposts are tracked separately so the sidebar can show each
     # one's listened progress. (is_repost 0 = original, 1 = repost.)
     sql = f"""
         SELECT a.*,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0) AS tracks_total,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_repost = 0) AS originals_total,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_repost = 0 AND t.is_checked = 1) AS originals_listened,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_repost = 1) AS reposts_total,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_repost = 1 AND t.is_checked = 1) AS reposts_listened,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_checked = 0 AND t.is_revisit = 0) AS new_count,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_revisit = 1) AS revisit_count,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_owned = 1) AS owned_count,
-               (SELECT COUNT(*) FROM tracks t
-                  WHERE t.artist_id = a.id AND t.is_deleted = 0 AND t.is_checked = 1) AS listened_count
+               COALESCE(c.tracks_total, 0) AS tracks_total,
+               COALESCE(c.originals_total, 0) AS originals_total,
+               COALESCE(c.originals_listened, 0) AS originals_listened,
+               COALESCE(c.reposts_total, 0) AS reposts_total,
+               COALESCE(c.reposts_listened, 0) AS reposts_listened,
+               COALESCE(c.new_count, 0) AS new_count,
+               COALESCE(c.revisit_count, 0) AS revisit_count,
+               COALESCE(c.owned_count, 0) AS owned_count,
+               COALESCE(c.listened_count, 0) AS listened_count
         FROM artists a
+        LEFT JOIN artist_counts c ON c.artist_id = a.id
         {where_sql}
     """
     # The "most to do" sorts are a work queue: artists with nothing left to go
@@ -394,6 +390,7 @@ async def refresh_artist_cache(conn: aiosqlite.Connection, artist_id: int) -> No
 # Tracks
 # Same rule as linkKind() in frontend/js/tracks.js: SoundCloud's own download or any
 # non-store link is "free", a store host is "buy", nothing at all is "unknown".
+# The artist_counts triggers (migration 018) and _COUNTS_FILL repeat these rules.
 _BUY_SQL = "(t.purchase_url LIKE '%bandcamp.com%' OR t.purchase_url LIKE '%beatport.com%')"
 LINK_SQL = {
     "buy": f"({_BUY_SQL} AND t.sc_download = 0)",
@@ -402,182 +399,141 @@ LINK_SQL = {
 }
 
 
+def _track_where(f: dict, t: str = "t", a: str = "a") -> tuple[str, list]:
+    """WHERE clause for the track list filters, with the table aliases swappable so
+    the duplicate-merge probe can apply the same filters to another row."""
+    # Tracks of a soft-deleted artist never surface (their counts are excluded too).
+    where = [f"{a}.is_deleted = 0"]
+    params: list[Any] = []
+    if f.get("is_deleted") is not None:
+        where.append(f"{t}.is_deleted = ?")
+        params.append(f["is_deleted"])
+    elif not f.get("include_deleted"):
+        where.append(f"{t}.is_deleted = 0")
+    if f.get("is_owned") is not None:
+        where.append(f"{t}.is_owned = ?")
+        params.append(f["is_owned"])
+    elif not f.get("include_owned"):
+        where.append(f"{t}.is_owned = 0")
+    if f.get("artist_ids"):
+        where.append(f"{t}.artist_id IN ({','.join('?' * len(f['artist_ids']))})")
+        params.extend(f["artist_ids"])
+    for col in ("is_checked", "is_revisit", "is_repost"):
+        if f.get(col) is not None:
+            where.append(f"{t}.{col} = ?")
+            params.append(f[col])
+    if f.get("link") in LINK_SQL:
+        where.append(re.sub(r"\bt\.", f"{t}.", LINK_SQL[f["link"]]))
+    if f.get("priority_min") is not None:
+        where.append(f"{a}.priority >= ?")
+        params.append(f["priority_min"])
+    if f.get("priority_in"):
+        where.append(f"{a}.priority IN ({','.join('?' * len(f['priority_in']))})")
+        params.extend(f["priority_in"])
+    if f.get("track_ids"):
+        where.append(_in_list(f"{t}.id"))
+        params.append(json.dumps(f["track_ids"]))
+    if f.get("search"):
+        where.append(f"({t}.name LIKE ? {_ESC} OR {a}.name LIKE ? {_ESC})")
+        params.extend([_like(f["search"]), _like(f["search"])])
+    return " AND ".join(where), params
+
+
+# Group keys shared by more than one track. Only those tracks need the merge check,
+# which keeps merging cheap when most tracks are unique.
+_DUP_KEYS = """dup AS MATERIALIZED (
+    SELECT group_key FROM tracks WHERE group_key IS NOT NULL
+     GROUP BY group_key HAVING COUNT(*) > 1)"""
+
+
 async def list_tracks(
     conn: aiosqlite.Connection,
     *,
-    artist_ids: Optional[list[int]] = None,
-    is_checked: Optional[int] = None,
-    is_revisit: Optional[int] = None,
-    include_deleted: bool = False,
-    is_deleted: Optional[int] = None,
-    include_owned: bool = False,
-    is_owned: Optional[int] = None,
-    is_repost: Optional[int] = None,
-    link: Optional[str] = None,
-    priority_min: Optional[int] = None,
-    priority_in: Optional[list[int]] = None,
-    track_ids: Optional[list[int]] = None,
-    search: Optional[str] = None,
-    sort: str = "priority_new_first",
+    sort: str = "priority",
+    asc: bool = False,
     merge: bool = False,
     limit: int = 500,
     offset: int = 0,
+    **filters: Any,
 ) -> list[dict]:
-    # Tracks of a soft-deleted artist never surface (their counts are excluded too).
-    where = ["1=1", "a.is_deleted = 0"]
-    params: list[Any] = []
-    if is_deleted is not None:
-        where.append("t.is_deleted = ?")
-        params.append(is_deleted)
-    elif not include_deleted:
-        where.append("t.is_deleted = 0")
-    if is_owned is not None:
-        where.append("t.is_owned = ?")
-        params.append(is_owned)
-    elif not include_owned:
-        where.append("t.is_owned = 0")
-    if artist_ids:
-        where.append(f"t.artist_id IN ({','.join('?' * len(artist_ids))})")
-        params.extend(artist_ids)
-    if is_checked is not None:
-        where.append("t.is_checked = ?")
-        params.append(is_checked)
-    if is_revisit is not None:
-        where.append("t.is_revisit = ?")
-        params.append(is_revisit)
-    if is_repost is not None:
-        where.append("t.is_repost = ?")
-        params.append(is_repost)
-    if link in LINK_SQL:
-        where.append(LINK_SQL[link])
-    if priority_min is not None:
-        where.append("a.priority >= ?")
-        params.append(priority_min)
-    if priority_in:
-        where.append(f"a.priority IN ({','.join('?' * len(priority_in))})")
-        params.extend(priority_in)
-    if track_ids:
-        where.append(_in_list("t.id"))
-        params.append(json.dumps(track_ids))
-    if search:
-        where.append(f"(t.name LIKE ? {_ESC} OR a.name LIKE ? {_ESC})")
-        params.extend([_like(search), _like(search)])
+    d = "ASC" if asc else "DESC"
+    # t.id last so paging through equal timestamps never repeats or skips a row.
+    # Each order matches an index (migration 017), so a page is read straight off
+    # the index instead of sorting every matching track first.
+    if sort == "artist":
+        order = f"t.artist_name COLLATE NOCASE {'DESC' if asc else 'ASC'}, t.name COLLATE NOCASE ASC, t.id ASC"
+        idx = "idx_tracks_artist_za" if asc else "idx_tracks_artist_az"
+    elif sort == "date_added":
+        order, idx = f"t.added_at {d}, t.id {d}", "idx_tracks_added"
+    else:
+        order = f"t.artist_priority DESC, t.added_at {d}, t.id {d}"
+        idx = "idx_tracks_prio_added_up" if asc else "idx_tracks_prio_added"
+    # A few artists' tracks are quicker to fetch by artist and sort.
+    if filters.get("artist_ids") or filters.get("track_ids"):
+        idx = None
+    t_from = f"tracks t INDEXED BY {idx}" if idx else "tracks t"
 
-    order = {
-        "priority_new_first": "a.priority DESC, t.added_at DESC",
-        "priority_old_first": "a.priority DESC, t.added_at ASC",
-        "artist_az": "a.name COLLATE NOCASE ASC, t.name COLLATE NOCASE ASC",
-        "track_az": "t.name COLLATE NOCASE ASC",
-        "date_added": "t.added_at DESC",
-        "last_seen": "t.last_seen DESC",
-        "owned": "t.is_owned DESC, a.priority DESC, t.added_at DESC",
-    }.get(sort, "a.priority DESC, t.added_at DESC")
-
-    where_sql = " AND ".join(where)
+    where_sql, params = _track_where(filters)
     if merge:
         # Collapse cross-artist duplicates (same canonical URL) to one row.
         # Representative = the original upload (is_repost=0) if present, else the
-        # lowest id. group_size > 1 marks a merged row for the UI.
-        gk = "COALESCE(t.group_key, 't' || t.id)"
+        # lowest id, among the rows the filters keep. group_size > 1 marks a merged
+        # row for the UI; it's only counted for the page that's returned.
+        u_sql, u_params = _track_where(filters, "u", "ua")
         sql = f"""
-            WITH g AS (
-                SELECT t.id AS tid,
-                       ROW_NUMBER() OVER (PARTITION BY {gk}
-                                          ORDER BY t.is_repost ASC, t.id ASC) AS rn,
-                       COUNT(*)     OVER (PARTITION BY {gk}) AS group_size
-                FROM tracks t
+            WITH {_DUP_KEYS}
+            SELECT t.*, a.name AS artist_name, a.priority AS artist_priority,
+                   CASE WHEN t.group_key IN dup THEN
+                     (SELECT COUNT(*) FROM tracks u INDEXED BY idx_tracks_group_state
+                        JOIN artists ua ON ua.id = u.artist_id
+                       WHERE u.group_key = t.group_key AND {u_sql})
+                   ELSE 1 END AS group_size
+            FROM (
+                SELECT t.id AS tid FROM {t_from}
                 JOIN artists a ON a.id = t.artist_id
                 WHERE {where_sql}
-            )
-            SELECT t.*, a.name AS artist_name, a.priority AS artist_priority,
-                   g.group_size AS group_size
-            FROM g
-            JOIN tracks t  ON t.id = g.tid
+                  AND (t.group_key IS NULL OR t.group_key NOT IN dup OR NOT EXISTS (
+                       SELECT 1 FROM tracks u INDEXED BY idx_tracks_group_state
+                         JOIN artists ua ON ua.id = u.artist_id
+                        WHERE u.group_key = t.group_key AND {u_sql}
+                          AND (u.is_repost < t.is_repost
+                               OR (u.is_repost = t.is_repost AND u.id < t.id))))
+                ORDER BY {order}
+                LIMIT ? OFFSET ?
+            ) p
+            JOIN tracks t  ON t.id = p.tid
             JOIN artists a ON a.id = t.artist_id
-            WHERE g.rn = 1
             ORDER BY {order}
-            LIMIT ? OFFSET ?
         """
+        params = u_params + params + u_params + [limit, offset]
     else:
         sql = f"""
             SELECT t.*, a.name AS artist_name, a.priority AS artist_priority,
                    1 AS group_size
-            FROM tracks t
+            FROM {t_from}
             JOIN artists a ON a.id = t.artist_id
             WHERE {where_sql}
             ORDER BY {order}
             LIMIT ? OFFSET ?
         """
-    params.extend([limit, offset])
+        params = params + [limit, offset]
     async with conn.execute(sql, params) as cur:
         return _rows(await cur.fetchall())
 
 
-async def count_tracks(
-    conn: aiosqlite.Connection,
-    *,
-    artist_ids: Optional[list[int]] = None,
-    is_checked: Optional[int] = None,
-    is_revisit: Optional[int] = None,
-    include_deleted: bool = False,
-    is_deleted: Optional[int] = None,
-    include_owned: bool = False,
-    is_owned: Optional[int] = None,
-    is_repost: Optional[int] = None,
-    link: Optional[str] = None,
-    priority_min: Optional[int] = None,
-    priority_in: Optional[list[int]] = None,
-    track_ids: Optional[list[int]] = None,
-    search: Optional[str] = None,
-    merge: bool = False,
-) -> int:
-    # Mirror list_tracks: soft-deleted artists' tracks are never counted.
-    where = ["1=1", "a.is_deleted = 0"]
-    params: list[Any] = []
-    if is_deleted is not None:
-        where.append("t.is_deleted = ?")
-        params.append(is_deleted)
-    elif not include_deleted:
-        where.append("t.is_deleted = 0")
-    if is_owned is not None:
-        where.append("t.is_owned = ?")
-        params.append(is_owned)
-    elif not include_owned:
-        where.append("t.is_owned = 0")
-    if artist_ids:
-        where.append(f"t.artist_id IN ({','.join('?' * len(artist_ids))})")
-        params.extend(artist_ids)
-    if is_checked is not None:
-        where.append("t.is_checked = ?")
-        params.append(is_checked)
-    if is_revisit is not None:
-        where.append("t.is_revisit = ?")
-        params.append(is_revisit)
-    if is_repost is not None:
-        where.append("t.is_repost = ?")
-        params.append(is_repost)
-    if link in LINK_SQL:
-        where.append(LINK_SQL[link])
-    if priority_min is not None:
-        where.append("a.priority >= ?")
-        params.append(priority_min)
-    if priority_in:
-        where.append(f"a.priority IN ({','.join('?' * len(priority_in))})")
-        params.extend(priority_in)
-    if track_ids:
-        where.append(_in_list("t.id"))
-        params.append(json.dumps(track_ids))
-    if search:
-        where.append(f"(t.name LIKE ? {_ESC} OR a.name LIKE ? {_ESC})")
-        params.extend([_like(search), _like(search)])
-    count_expr = (
-        "COUNT(DISTINCT COALESCE(t.group_key, 't' || t.id))" if merge else "COUNT(*)"
-    )
-    sql = f"""
-        SELECT {count_expr} AS n
-        FROM tracks t JOIN artists a ON a.id = t.artist_id
-        WHERE {' AND '.join(where)}
-    """
+async def count_tracks(conn: aiosqlite.Connection, *, merge: bool = False, **filters: Any) -> int:
+    where_sql, params = _track_where(filters)
+    if merge:
+        # Unique tracks count once each, every duplicate group counts once.
+        sql = f"""
+            WITH {_DUP_KEYS}
+            SELECT COALESCE(SUM(t.group_key IS NULL OR t.group_key NOT IN dup), 0)
+                 + COUNT(DISTINCT CASE WHEN t.group_key IN dup THEN t.group_key END) AS n
+            FROM tracks t JOIN artists a ON a.id = t.artist_id
+            WHERE {where_sql}
+        """
+    else:
+        sql = f"SELECT COUNT(*) AS n FROM tracks t JOIN artists a ON a.id = t.artist_id WHERE {where_sql}"
     async with conn.execute(sql, params) as cur:
         row = await cur.fetchone()
     return row["n"] if row else 0
@@ -854,18 +810,37 @@ async def add_check_items(conn: aiosqlite.Connection, check_id: int, items: list
         "SELECT track_id FROM owned_check_items WHERE check_id = ?", (check_id,)
     ) as cur:
         have = {r["track_id"] for r in await cur.fetchall()}
-    rows = [(check_id, m["track_id"], m["filename"], m.get("path"), m["score"], m["kind"])
+    rows = [(check_id, m["track_id"], m["filename"], m.get("path"), m["score"], m["kind"],
+             m.get("tags"))
             for m in items if m["track_id"] not in have]
     if rows:
         await conn.executemany(
-            "INSERT INTO owned_check_items (check_id, track_id, filename, path, score, kind) "
-            "VALUES (?, ?, ?, ?, ?, ?)", rows,
+            "INSERT INTO owned_check_items (check_id, track_id, filename, path, score, kind, tags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)", rows,
         )
     await conn.execute(
         "UPDATE owned_checks SET updated_at = ?, status = 'open' WHERE id = ?", (now_iso(), check_id)
     )
     await conn.commit()
     return len(rows)
+
+
+async def get_file_tags(conn: aiosqlite.Connection) -> dict[str, tuple]:
+    """path -> (mtime_ns, size, artist, title, album_artist) for every cached file."""
+    async with conn.execute(
+        "SELECT path, mtime_ns, size, artist, title, album_artist FROM file_tags"
+    ) as cur:
+        return {r[0]: tuple(r[1:]) for r in await cur.fetchall()}
+
+
+async def save_file_tags(conn: aiosqlite.Connection, rows: list[tuple]) -> None:
+    if not rows:
+        return
+    await conn.executemany(
+        "INSERT OR REPLACE INTO file_tags (path, mtime_ns, size, artist, title, album_artist) "
+        "VALUES (?, ?, ?, ?, ?, ?)", rows,
+    )
+    await conn.commit()
 
 
 async def list_checks(conn: aiosqlite.Connection) -> list[dict]:
@@ -890,7 +865,7 @@ async def get_check(conn: aiosqlite.Connection, check_id: int) -> Optional[dict]
 
 
 _ITEM_SELECT = """SELECT i.id, i.check_id, i.track_id, i.filename, i.path IS NOT NULL AS has_path,
-       i.score, i.kind, i.state, i.action, i.decided_at,
+       i.score, i.kind, i.tags, i.state, i.action, i.decided_at,
        t.name AS track_name, t.url, a.name AS artist_name
   FROM owned_check_items i
   JOIN tracks t ON t.id = i.track_id
@@ -1222,7 +1197,18 @@ async def stats(
     ) as cur:
         out["unscraped_artists"] = (await cur.fetchone())["n"]
     free, buy, unknown = (LINK_SQL[k].replace("t.purchase_url", "purchase_url").replace("t.sc_download", "sc_download") for k in ("free", "buy", "unknown"))
-    async with conn.execute(
+    # Whole library or an artist selection: sum the stored per-artist counts. A run's
+    # results are an arbitrary set of tracks, so those are still counted directly.
+    counts_sql = f"""SELECT
+              SUM(c.tracks_total) AS total, SUM(c.listened_count) AS listened,
+              SUM(c.new_count) AS new, SUM(c.revisit_count) AS revisit,
+              SUM(c.originals_total) AS originals_total, SUM(c.originals_listened) AS originals_listened,
+              SUM(c.reposts_total) AS reposts_total, SUM(c.reposts_listened) AS reposts_listened,
+              SUM(c.free_total) AS free_total, SUM(c.buy_total) AS buy_total,
+              SUM(c.unknown_total) AS unknown_total, SUM(c.owned_count) AS owned
+           FROM artist_counts c JOIN artists a ON a.id = c.artist_id
+           WHERE a.is_deleted = 0{art_sql.replace("artist_id", "c.artist_id")}"""
+    async with conn.execute(counts_sql if not track_ids else
         f"""SELECT
               COUNT(*) AS total,
               SUM(CASE WHEN is_checked = 1 THEN 1 ELSE 0 END) AS listened,
@@ -1234,7 +1220,8 @@ async def stats(
               SUM(CASE WHEN is_repost = 1 AND is_checked = 1 THEN 1 ELSE 0 END) AS reposts_listened,
               SUM(CASE WHEN {free} THEN 1 ELSE 0 END) AS free_total,
               SUM(CASE WHEN {buy} THEN 1 ELSE 0 END) AS buy_total,
-              SUM(CASE WHEN {unknown} THEN 1 ELSE 0 END) AS unknown_total
+              SUM(CASE WHEN {unknown} THEN 1 ELSE 0 END) AS unknown_total,
+              SUM(CASE WHEN is_owned = 1 THEN 1 ELSE 0 END) AS owned
            FROM tracks WHERE is_deleted = 0{nd}{art_sql}""",
         art_params,
     ) as cur:
@@ -1254,24 +1241,64 @@ async def stats(
     out["originals_pct"] = round(100 * out["originals_listened"] / out["originals_total"]) if out["originals_total"] else 0
     out["reposts_pct"] = round(100 * out["reposts_listened"] / out["reposts_total"]) if out["reposts_total"] else 0
     out["revisit_pct"] = round(100 * out["revisit"] / out["tracks_total"]) if out["tracks_total"] else 0
-    async with conn.execute(
-        f"SELECT COUNT(*) AS n FROM tracks WHERE is_deleted = 0 AND is_owned = 1{nd}{art_sql}",
-        art_params,
-    ) as cur:
-        out["owned"] = (await cur.fetchone())["n"]
+    out["owned"] = r["owned"] or 0
     # "Listened today": tracks marked listened since the start of the LOCAL calendar
     # day (now_iso stores UTC, so convert local midnight to UTC for the comparison).
     local_midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
     today_start = local_midnight.astimezone(timezone.utc).isoformat()
     async with conn.execute(
-        f"SELECT COUNT(*) AS n FROM tracks WHERE is_deleted = 0 AND is_checked = 1 "
-        f"AND checked_at >= ?{nd}{art_sql}",
+        f"SELECT COUNT(*) AS n FROM tracks INDEXED BY idx_tracks_checked_at "
+        f"WHERE checked_at >= ? AND is_deleted = 0 AND is_checked = 1{nd}{art_sql}",
         [today_start, *art_params],
     ) as cur:
         out["listened_today"] = (await cur.fetchone())["n"]
     async with conn.execute("SELECT MAX(finished_at) AS t FROM scrape_log") as cur:
         out["last_update"] = (await cur.fetchone())["t"]
     return out
+
+
+# Same fill as migration 018, for rebuilding artist_counts if it ever drifts.
+_COUNTS_FILL = """
+    INSERT INTO artist_counts (artist_id, tracks_total, originals_total, originals_listened, reposts_total, reposts_listened, new_count, revisit_count, owned_count, listened_count, free_total, buy_total, unknown_total)
+    SELECT t.artist_id,
+           SUM(CASE WHEN t.is_deleted = 0 AND (1=1) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_repost = 0) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_repost = 0 AND t.is_checked = 1) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_repost = 1) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_repost = 1 AND t.is_checked = 1) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_checked = 0 AND t.is_revisit = 0) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_revisit = 1) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_owned = 1) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.is_checked = 1) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (t.sc_download = 1 OR (COALESCE(t.purchase_url, '') <> '' AND NOT (t.purchase_url LIKE '%bandcamp.com%' OR t.purchase_url LIKE '%beatport.com%'))) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND ((t.purchase_url LIKE '%bandcamp.com%' OR t.purchase_url LIKE '%beatport.com%') AND t.sc_download = 0) THEN 1 ELSE 0 END),
+           SUM(CASE WHEN t.is_deleted = 0 AND (COALESCE(t.purchase_url, '') = '' AND t.sc_download = 0) THEN 1 ELSE 0 END)
+      FROM tracks t
+     GROUP BY t.artist_id
+"""
+
+
+async def check_artist_counts(conn: aiosqlite.Connection) -> bool:
+    """Compare artist_counts with the tracks it summarises and rebuild it on any
+    difference. The check reads one covering index, so it stays quick at startup.
+    Returns True when a rebuild was needed."""
+    async with conn.execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(is_owned), 0) AS owned, COALESCE(SUM(is_checked), 0) AS heard "
+        "FROM tracks INDEXED BY idx_tracks_state WHERE is_deleted = 0"
+    ) as cur:
+        real = tuple(await cur.fetchone())
+    async with conn.execute(
+        "SELECT COALESCE(SUM(tracks_total), 0), COALESCE(SUM(owned_count), 0), "
+        "COALESCE(SUM(listened_count), 0) FROM artist_counts"
+    ) as cur:
+        stored = tuple(await cur.fetchone())
+    if real == stored:
+        return False
+    await conn.execute("DELETE FROM artist_counts")
+    await conn.execute(_COUNTS_FILL)
+    await conn.commit()
+    print(f"[db] artist_counts rebuilt (stored {stored}, actual {real})")
+    return True
 
 
 async def purge_deleted(conn: aiosqlite.Connection) -> dict:
@@ -1294,10 +1321,13 @@ async def export_all(conn: aiosqlite.Connection) -> dict:
 
 
 # Child tables before their parents (FK-safe delete order).
-_DELETE_ORDER = ("owned_check_items", "owned_checks", "scrape_log", "import_sessions", "tracks", "artists", "skipped_artists", "settings")
-# Parents before children (FK-safe insert order).
-_INSERT_ORDER = ("artists", "tracks", "import_sessions", "scrape_log", "skipped_artists",
-                 "owned_checks", "owned_check_items", "settings")
+_DELETE_ORDER = ("owned_check_items", "owned_checks", "owned_rejections", "run_results",
+                 "scrape_log", "import_sessions", "tracks", "artists", "skipped_artists", "settings")
+# Parents before children (FK-safe insert order). file_tags is left out: it's a cache
+# of this machine's paths and rebuilds on the next folder check.
+_INSERT_ORDER = ("artists", "tracks", "import_sessions", "scrape_log", "run_results",
+                 "skipped_artists", "owned_rejections", "owned_checks", "owned_check_items",
+                 "settings")
 
 
 async def _table_columns(conn: aiosqlite.Connection, table: str) -> set[str]:

@@ -2,7 +2,7 @@
 window.DJ = window.DJ || {};
 window.DJ.tracksMixin = {
   tracks: [],
-  tracksTotal: 0,
+  tracksTotal: null,   // null until /count answers
   tracksLoading: false,
   selectedTrackIds: [],
   focusedIndex: -1,
@@ -56,6 +56,14 @@ window.DJ.tracksMixin = {
   // Standard file-manager row selection: plain = single, ctrl/⌘ = toggle,
   // shift = contiguous range from the anchor.
   rowClick(t, i, e) {
+    // The marks, the name and the open icon share the row's one listener.
+    const act = e.target.closest && e.target.closest("[data-act]");
+    if (act) {
+      if (act.dataset.act === "heard") this.toggleCheck(t);
+      else if (act.dataset.act === "later") this.toggleRevisit(t);
+      else this.openTrack(t);
+      return;
+    }
     if (e.shiftKey && this._selectAnchor !== null) {
       const a = Math.min(this._selectAnchor, i);
       const b = Math.max(this._selectAnchor, i);
@@ -70,9 +78,24 @@ window.DJ.tracksMixin = {
     this.focusedIndex = i;
   },
 
+  // Everything a row's marks and badges depend on, as classes on the row.
+  rowClass(t) {
+    let c = "";
+    if (t.is_checked) c += " checked";
+    if (t.is_revisit) c += " revisit";
+    if (t.is_deleted) c += " deleted";
+    if (t.is_owned) c += " is-owned";
+    if (t.is_repost) c += " is-repost";
+    if (t.group_size > 1) c += " is-merged";
+    if (this.isNew(t)) c += " isnew";
+    const k = this.linkKind(t);
+    c += k === "free" ? (this._freeLink(t) ? " lk-free-link" : " lk-free-sc") : k === "buy" ? " lk-buy" : " lk-none";
+    return c;
+  },
+
   _trackQuery() {
     const f = this.filters;
-    const q = { sort: this.sort, limit: this.trackPageSize || 500 };
+    const q = { sort: this.sort, asc: this.sortAsc || undefined, limit: this.trackPageSize || 500 };
     if (this.selectedArtistIds.length) q.artist_id = this.selectedArtistIds.join(",");
     if (f.status === "new") { q.is_checked = 0; q.is_revisit = 0; }
     if (f.status === "listened") q.is_checked = 1;
@@ -180,6 +203,10 @@ window.DJ.tracksMixin = {
       const q = this._trackQuery();
       const key = JSON.stringify(q);
       const same = this.tracksLoaded && key === this._trkKey;
+      // A refresh keeps however many rows scrolling had loaded.
+      if (same) q.limit = Math.max(q.limit, this.tracks.length);
+      q.with_total = false;
+      this._countTracks(q, seq);
       // A new query holds the old rows (dimmed) until the filter pill has finished
       // sliding; swapping hundreds of rows mid-slide makes it stutter.
       const t0 = performance.now();
@@ -207,7 +234,7 @@ window.DJ.tracksMixin = {
       this._collapseStagger = 0;
       if (!same && r.items.length > 40) { this.renderLimit = 40; this._growRender(); }
       this.tracks = r.items;
-      this.tracksTotal = r.total;
+      this._trkMore = r.items.length >= q.limit;
       this.tracksLoaded = true;
       // Selection refers to the previous view; clear it on (re)load.
       // Every row's :class reads this, so only touch it when there is something to clear.
@@ -231,6 +258,33 @@ window.DJ.tracksMixin = {
       });
     } catch (e) { this.toast(e.message, "err"); }
     finally { if (seq === this._trkSeq) { this.tracksLoading = false; this.listSwapping = false; } }
+  },
+
+  // The total costs more than the page on a big library, so it arrives on its own
+  // and the rows don't wait for it.
+  async _countTracks(q, seq) {
+    try {
+      const r = await api.countTracks(q);
+      if (seq === this._trkSeq) this.tracksTotal = r.total;
+    } catch (e) {}
+  },
+
+  // Scrolling near the end of the list fetches the next batch.
+  async moreTracks(el) {
+    if (!this._trkMore || this._trkMoreBusy || this.tracksLoading) return;
+    if (el.scrollTop + el.clientHeight < el.scrollHeight - 600) return;
+    const seq = this._trkSeq;
+    this._trkMoreBusy = true;
+    try {
+      const q = { ...this._trackQuery(), offset: this.tracks.length, with_total: false };
+      const r = await api.listTracks(q);
+      if (seq !== this._trkSeq) return;
+      const have = new Set(this.tracks.map((t) => t.id));
+      this.tracks = this.tracks.concat(r.items.filter((t) => !have.has(t.id)));
+      this._trkMore = r.items.length >= q.limit;
+      requestAnimationFrame(() => this._syncRowMarks());
+    } catch (e) { this.toast(e.message, "err"); }
+    finally { this._trkMoreBusy = false; }
   },
 
   // Empty-state chips: one per active filter, each clears only itself.
@@ -459,7 +513,7 @@ window.DJ.tracksMixin = {
     this._collapseStagger = 90;
     this.bulk({ is_checked: 1 }, (sel) => {
       for (const id of sel) {
-        DJ.anim.fx(document.querySelector(`.track[data-k="${id}"] .mark.heard:not(.on) .chk`), "fx-draw");
+        DJ.anim.fx(document.querySelector(`.track[data-k="${id}"]:not(.checked) .mark.heard .chk`), "fx-draw");
       }
       for (const t of this.tracks) if (sel.has(t.id)) { t.is_checked = 1; t.is_revisit = 0; }
     });

@@ -1,6 +1,7 @@
 """FastAPI application: lifespan-managed DB connection, static frontend, routes."""
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -12,11 +13,20 @@ from db import queries
 from db.schema import connect, init_db
 from api.routes import artists, owned, scrape, sessions, settings, system, tracks
 
+READERS = 4  # read-only connections for the list endpoints
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     app.state.db = await connect()
+    app.state.read_pool = asyncio.Queue()
+    readers = []
+    for _ in range(READERS):
+        conn = await connect()
+        await conn.execute("PRAGMA query_only = ON")
+        readers.append(conn)
+        app.state.read_pool.put_nowait(conn)
     # No scrape run can be live at process start, so any session left
     # "in_progress" by a previous hard exit is orphaned - flip it to "paused"
     # so the resume banner / "Continue last import" can recover it (and drain
@@ -41,6 +51,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        for conn in readers:
+            await conn.close()
         await app.state.db.close()
 
 

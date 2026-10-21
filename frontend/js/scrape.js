@@ -98,7 +98,10 @@ window.DJ.scrapeMixin = {
           ev.skipped_before && `${ev.skipped_before} skipped before`].filter(Boolean).join(", ")
           + ` - left out. ${ev.remaining} new to review.`);
         break;
-      case "run_start": r.total = ev.total; break;
+      case "run_start":
+        r.total = ev.total;
+        if (ev.processed !== undefined) { r.processed = ev.processed; r.skipped = ev.skipped || 0; }
+        break;
       case "queue_grew": r.total = ev.total; break;
       case "artist_start":
         r.index = ev.index; r.currentName = ev.name; r.captcha = false; r.curCount = 0; r.curPhase = "tracks";
@@ -108,6 +111,7 @@ window.DJ.scrapeMixin = {
       case "artist_progress":
         r.curCount = ev.count; r.curPhase = ev.phase;
         r.bgCount = ev.count; r.bgPhase = ev.phase;
+        if (ev.name) { r.bgName = ev.name; r.bgActive = true; }  // a stream joined mid-artist
         break;
       case "await_decision": this._presentCard(ev); break;
       case "artist_queued":

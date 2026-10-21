@@ -43,7 +43,7 @@ class ScanBody(BaseModel):
 
 
 async def _match_into_check(
-    db, root: str, filenames: list[str], paths: dict[str, str], floor: Optional[int],
+    db, root: str, filenames: list[str], paths: list[str], floor: Optional[int],
     artist_id: Optional[int] = None, token: Optional[str] = None,
 ) -> dict:
     """Match filenames vs not-yet-owned tracks and save the hits as a check.
@@ -58,7 +58,7 @@ async def _match_into_check(
     floor = min(100, max(0, floor))
     exact_at = int(await queries.get_setting(db, "owned_match_threshold", 98))
     tracks = await queries.list_tracks(
-        db, include_owned=True, limit=100000,
+        db, include_owned=True, limit=-1,  # -1: no limit, libraries pass 100k
         artist_ids=[artist_id] if artist_id else None,
     )
     candidates = [t for t in tracks if not t["is_owned"]]
@@ -70,20 +70,31 @@ async def _match_into_check(
     # (track, filename) pairs the user said aren't the same song - never re-match them.
     rejected = await queries.get_owned_rejections(db, [t["id"] for t in candidates])
 
-    progress_cb = None
+    # With paths (native picker) the tags are read first, as the first half of the bar.
+    def stage(start, span):
+        if not token:
+            return None
+        def cb(done, total):  # called from the worker thread
+            SCAN_PROGRESS[token] = start + (int(span * done / total) if total else span)
+        return cb
+
     if token:
         SCAN_PROGRESS[token] = 0
-        def progress_cb(done, total):  # noqa: E306 - called from the worker thread
-            SCAN_PROGRESS[token] = int(100 * done / total) if total else 100
     try:
+        tags = None
+        if paths:
+            cache = await queries.get_file_tags(db)
+            tags, fresh = await asyncio.to_thread(
+                folder_pick.read_tag_labels, filenames, paths, cache, stage(0, 50)
+            )
+            await queries.save_file_tags(db, fresh)
         matches = await asyncio.to_thread(
-            match.match_filenames, candidates, filenames, floor, progress_cb, rejected, exact_at
+            match.match_filenames, candidates, filenames, floor,
+            stage(50, 50) if paths else stage(0, 100), rejected, exact_at, tags, paths or None,
         )
     finally:
         if token:
             SCAN_PROGRESS.pop(token, None)
-    for m in matches:
-        m["path"] = paths.get(m["filename"])
 
     scanned = sum(1 for f in filenames if match.is_audio(f))
     check_id = await queries.find_open_check(db, root, artist_id)
@@ -105,7 +116,7 @@ async def progress(token: str):
 async def scan(body: ScanBody, db=Depends(get_db)):
     """Match a list of file names from the browser folder picker (names only)."""
     return await _match_into_check(
-        db, body.root, body.filenames, {}, body.floor, body.artist_id, body.token
+        db, body.root, body.filenames, [], body.floor, body.artist_id, body.token
     )
 
 

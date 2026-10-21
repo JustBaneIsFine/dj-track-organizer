@@ -1,5 +1,5 @@
 // "Check folder for tracks I already own."
-// Only file NAMES are collected and matched; the app never modifies files. A scan
+// File names (plus artist/title tags on the native path) are matched; the app never modifies files. A scan
 // is saved as a check whose matches are decided one at a time, so a review can be
 // paused and picked up later. A match can be played in the user's default player.
 window.DJ = window.DJ || {};
@@ -12,9 +12,9 @@ window.DJ.ownedMixin = {
 
   _audioExts: [".mp3", ".flac", ".wav", ".aif", ".aiff", ".m4a", ".aac", ".ogg", ".wma", ".alac"],
   checkKinds: [
-    { key: "exact", label: "Exact", why: "Artist and title are both in the file name" },
-    { key: "title", label: "Title only", why: "The title matches, but the file name has no artist" },
-    { key: "fuzzy", label: "Fuzzy", why: "Close, but not an exact match" },
+    { key: "exact", label: "Exact", why: "Artist and title are both in the file name or its tags" },
+    { key: "title", label: "Title only", why: "The title matches, but neither the file name nor its tags name the artist" },
+    { key: "fuzzy", label: "Fuzzy", why: "Close but not exact, or a one-word title with no artist to confirm it" },
   ],
 
   // Top bar button: open the list of saved checks, or go straight to picking a
@@ -103,7 +103,7 @@ window.DJ.ownedMixin = {
     try {
       const floor = opts.floor != null ? opts.floor : null;
       const token = this._newScanToken();
-      this.ownedScan = { phase: "matching", count: picked.count, percent: 0 };
+      this.ownedScan = { phase: "matching", count: picked.count, percent: 0, tags: true };
       await new Promise(r => setTimeout(r));
       const stopPoll = this._startProgressPoll(token);
       let r;

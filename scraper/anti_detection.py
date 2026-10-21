@@ -67,6 +67,11 @@ async def inter_artist_delay(cfg: TimingConfig) -> None:
     await _sleep_ms(random.uniform(cfg.delay_min_ms, cfg.delay_max_ms))
 
 
+def pause_s(cfg: TimingConfig) -> float:
+    """Seconds between two artists: a reading pause plus the inter-artist delay."""
+    return random.uniform(1.0, 3.0) + random.uniform(cfg.delay_min_ms, cfg.delay_max_ms) / 1000.0
+
+
 async def reading_pause() -> None:
     """Extra short 'reading' pause after finishing an artist."""
     await _sleep_ms(random.uniform(1000, 3000))
@@ -87,7 +92,8 @@ async def move_mouse_randomly(page) -> None:
         pass  # mouse moves are best-effort; never fail a scrape over them
 
 
-async def human_scroll_to_bottom(page, cfg: TimingConfig, count_fn, *, on_progress=None, stop_check=None, max_steps: int = 400):
+async def human_scroll_to_bottom(page, cfg: TimingConfig, count_fn, *, on_progress=None, stop_check=None,
+                                 list_done=None, max_steps: int = 400):
     """Scroll down in jittered steps until item count stops growing.
 
     ``count_fn`` is an async callable returning the current number of collected
@@ -96,6 +102,8 @@ async def human_scroll_to_bottom(page, cfg: TimingConfig, count_fn, *, on_progre
     is reported whenever the running count grows, for live UI progress.
     ``stop_check`` (optional, async → bool) lets the caller end scrolling early -
     e.g. once the freshly-loaded tracks are all ones we already have.
+    ``list_done`` (optional, sync → bool) says the site reported the list has no
+    more pages; a scroll that then adds nothing ends it without the confirmation wait.
     """
     async def _should_stop() -> bool:
         if stop_check is None:
@@ -130,6 +138,8 @@ async def human_scroll_to_bottom(page, cfg: TimingConfig, count_fn, *, on_progre
         await _sleep_ms(_jitter(cfg.scroll_pause_ms))
 
         current = await count_fn()
+        if current <= last_count and list_done is not None and list_done():
+            break
         if current <= last_count:
             stagnant += 1
             if stagnant >= 3:

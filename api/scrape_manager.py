@@ -52,6 +52,11 @@ class Job:
     errors: list = field(default_factory=list)
     queue: Optional[list] = None  # live queue ref, so a batch update can be appended to
     new_track_ids: list = field(default_factory=list)  # tracks this run added, saved at the end
+    # Review can stop while the worker keeps scraping, then start again on the same job.
+    triage_active: bool = False
+    triage_waiting: bool = False
+    triage_again: asyncio.Event = field(default_factory=asyncio.Event)
+    pending_decision: Optional[dict] = None  # the card on screen, replayed to a new stream
 
     async def emit(self, event: dict) -> None:
         await self.events.put(event)
@@ -218,6 +223,17 @@ class ScrapeManager:
         )
         return session_id
 
+    def continue_live(self, session_id: int) -> bool:
+        """Continue a run that is still live: unpause it, and restart review if it
+        was stopped while queued artists finish. False when nothing is live."""
+        job = self.jobs.get(session_id)
+        if not job:
+            return False
+        job.control.paused.clear()
+        if job.triage_waiting:
+            job.triage_again.set()
+        return True
+
     # Control
     def pause(self, session_id: int) -> bool:
         job = self.jobs.get(session_id)
@@ -365,11 +381,12 @@ class ScrapeManager:
 
                 job.queue = queue  # expose for live appends (single-artist updates)
                 total = len(queue)
-                await job.emit({"type": "run_start", "total": total, "mode": run_mode})
-
                 start_index = session.get("current_index", 0)
                 job.processed = session.get("processed_count", 0)
                 job.skipped = session.get("skipped_count", 0)
+                # Counts carried over from earlier sittings, so a resumed run doesn't show 0.
+                await job.emit({"type": "run_start", "total": total, "mode": run_mode,
+                                "processed": job.processed, "skipped": job.skipped})
 
                 scrape_args = (settings, stop_on_known, stop_after)
                 if job.interactive:
@@ -380,10 +397,35 @@ class ScrapeManager:
                     worker = asyncio.create_task(
                         self._scrape_worker(job, eng, session_id, queue, total, *scrape_args)
                     )
-                    await self._decision_loop(
-                        job, conn, session_id, queue, total, start_index, *scrape_args
-                    )
-                    await job.scrape_q.put(WORKER_DONE)  # no more artists coming
+                    idx0, first = start_index, True
+                    while True:
+                        job.triage_active = True
+                        stopped = await self._decision_loop(
+                            job, conn, session_id, queue, total, idx0, *scrape_args,
+                            requeue=first,
+                        )
+                        job.triage_active = False
+                        await job.scrape_q.put(WORKER_DONE)  # no more artists coming
+                        if (not stopped or job.control.abandoned.is_set()
+                                or job.worker_stop.is_set()):
+                            break
+                        # Review stopped but the worker is still draining: "Continue
+                        # last import" can restart review on this same job.
+                        job.triage_again.clear()
+                        job.triage_waiting = True
+                        again = asyncio.ensure_future(job.triage_again.wait())
+                        await asyncio.wait({worker, again}, return_when=asyncio.FIRST_COMPLETED)
+                        job.triage_waiting = False
+                        if not again.done() or worker.done():
+                            again.cancel()
+                            break
+                        while not job.decision.empty():
+                            job.decision.get_nowait()  # stale __stop__ from the last stop
+                        await queries.update_session(conn, session_id, status="in_progress")
+                        idx0 = (await queries.get_session(conn, session_id))["current_index"]
+                        first = False
+                        await job.emit({"type": "run_start", "total": total, "mode": run_mode,
+                                        "processed": job.processed, "skipped": job.skipped})
                     await worker
                 else:
                     await self._batch_loop(
@@ -446,13 +488,14 @@ class ScrapeManager:
 
     # Interactive: producer (triage) + consumer (background scrape worker)
     async def _decision_loop(self, job, conn, session_id, queue, total, start_index,
-                             settings, stop_on_known, stop_after) -> None:
+                             settings, stop_on_known, stop_after, *, requeue=True) -> bool:
         """Producer: present each artist for review and enqueue 'add & scrape'
         decisions for the background worker. Never scrapes (so it never touches the
-        page). Owns ``current_index`` (the triage pointer)."""
+        page). Owns ``current_index`` (the triage pointer). True when review was
+        stopped with Stop & save."""
         # Resume: artists already chosen for scraping last time are re-enqueued so
         # the worker drains them (they aren't re-reviewed).
-        for i, e in enumerate(queue):
+        for i, e in enumerate(queue if requeue else []):
             if e.get("status") == "queued":
                 artist = await queries.get_artist(conn, e.get("artist_id")) if e.get("artist_id") else None
                 if artist:
@@ -479,14 +522,17 @@ class ScrapeManager:
                 await job.emit({"type": "artist_skipped", "index": idx, "name": entry["name"]})
                 continue
 
-            await job.emit({"type": "await_decision", "index": idx,
-                            "name": entry["name"], "url": entry["url"]})
+            card = {"type": "await_decision", "index": idx,
+                    "name": entry["name"], "url": entry["url"]}
+            job.pending_decision = card
+            await job.emit(card)
             decision = await job.decision.get()
+            job.pending_decision = None
             action = decision.get("action", "skip")
             # "Stop & save" - leave THIS artist pending (current_index points here) and
             # stop triage; the worker keeps draining whatever was already queued.
             if action == "__stop__":
-                break
+                return True
             priority = int(decision.get("priority", 0))
             aliases = decision.get("aliases") or []
             notes = decision.get("notes") or ""
@@ -539,6 +585,7 @@ class ScrapeManager:
                 "artist_id": artist["id"], "queued_remaining": job.queued_count,
             })
             await job.scrape_q.put((idx, entry, artist))
+        return False
 
     async def _scrape_worker(self, job, eng, session_id, queue, total,
                              settings, stop_on_known, stop_after) -> None:
@@ -550,24 +597,26 @@ class ScrapeManager:
             while True:
                 item = await job.scrape_q.get()
                 if item is WORKER_DONE:
+                    if job.triage_active and not job.worker_stop.is_set():
+                        continue  # left over from a review that has since restarted
                     break
                 if job.control.abandoned.is_set() or job.worker_stop.is_set():
                     # Leave this + any remaining queued artists as "queued" (resumable).
                     break
                 idx, entry, artist = item
                 await job.control.wait_if_paused()
+                await eng.wait_for_pace()
                 if job.control.abandoned.is_set() or job.worker_stop.is_set():
                     break
                 await self._scrape_one(job, eng, wconn, artist, entry, idx, total,
                                        settings, stop_on_known, stop_after, from_queue=True)
+                eng.artist_finished()
                 # Persist the finished entry + counts (NOT current_index - that's the
                 # producer's triage pointer).
                 await queries.update_session(
                     wconn, session_id, artist_queue=queue,
                     processed_count=job.processed, skipped_count=job.skipped,
                 )
-                if not (job.control.abandoned.is_set() or job.worker_stop.is_set()):
-                    await eng.pace_between_artists()
         finally:
             await wconn.close()
 
@@ -587,6 +636,9 @@ class ScrapeManager:
             if entry.get("status") in ("done", "skipped"):
                 idx += 1
                 continue
+            await eng.wait_for_pace()
+            if job.control.abandoned.is_set():
+                break
             total = len(queue)  # grows as artists are appended
             artist = await queries.add_artist(
                 conn, name=entry["name"], url=entry["url"],
@@ -594,10 +646,9 @@ class ScrapeManager:
             entry["artist_id"] = artist["id"]
             await self._scrape_one(job, eng, conn, artist, entry, idx, total,
                                    settings, stop_on_known, stop_after, from_queue=False)
+            eng.artist_finished()
             await self._persist(conn, session_id, queue, idx + 1, job)
             idx += 1
-            if idx < len(queue) and not job.control.abandoned.is_set():
-                await eng.pace_between_artists()
 
     async def _scrape_one(self, job, eng, conn, artist, entry, idx, total,
                           settings, stop_on_known, stop_after, *, from_queue) -> None:

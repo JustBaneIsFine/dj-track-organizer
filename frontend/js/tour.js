@@ -23,7 +23,8 @@ window.DJ.tourMixin = {
   finishOnboarding(mode) {
     this.settings.onboarded = "true";
     this.settings.checklist = "active";
-    api.patchSettings({ onboarded: "true", checklist: "active" }).catch(() => {});
+    this.settings.video_nudge = "done";  // onboarding already offers the video
+    api.patchSettings({ onboarded: "true", checklist: "active", video_nudge: "done" }).catch(() => {});
     this.welcomeStep = 0;
     if (mode === "video" && this.meta.tutorial_url) window.open(this.meta.tutorial_url, "_blank");
     if (mode === "tour") this.$nextTick(() => this.startTour("add"));

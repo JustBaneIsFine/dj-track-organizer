@@ -1,7 +1,7 @@
 """Filename → library-track fuzzy matching for the "tracks I already own" feature.
 
-READ-ONLY by design: this module only ever receives plain strings (file *names*
-the browser collected). It never opens, reads, writes, moves, or deletes any file.
+READ-ONLY by design: this module only ever receives plain strings (file names and
+"Artist - Title" read from tags). It never opens, writes, moves, or deletes any file.
 """
 from __future__ import annotations
 
@@ -28,6 +28,18 @@ _FREE_DL_RE = re.compile(
     re.I,
 )
 
+# "(Original Mix)", "[Extended Mix]", " - Original Mix": the same song, so dropped.
+_NEUTRAL_RE = re.compile(
+    r"[\(\[]\s*(?:original|extended)(?:\s+(?:mix|version))?\s*[\)\]]"
+    r"|\s[-–—]\s*(?:original|extended)\s+(?:mix|version)\b",
+    re.I,
+)
+
+# Words that make a bracket or " - " part a version ("Bicep Remix", "VIP", "Radio Edit").
+_VERSION_MARKERS = {"remix", "rmx", "rework", "edit", "bootleg", "flip", "vip", "dub", "refix"}
+_VERSION_GENERIC = _VERSION_MARKERS | {"mix", "version", "re", "the", "s"}
+_BRACKET_RE = re.compile(r"[\(\[\{]([^\)\]\}]*)[\)\]\}]")
+
 
 def normalize(name: str) -> str:
     """Normalize a filename or track title for comparison.
@@ -42,9 +54,42 @@ def normalize(name: str) -> str:
     s = _LEADING_NUM_RE.sub("", s)    # drop a leading track number
     s = s.lower()
     s = _FREE_DL_RE.sub(" ", s)       # drop promo tags absent from the real file
+    s = _NEUTRAL_RE.sub(" ", s)       # "(original mix)" etc.
     s = re.sub(r"[^\w\s]", " ", s)    # punctuation -> space (\w keeps letters/digits)
     s = s.replace("_", " ")           # underscores too (\w includes them)
     return re.sub(r"\s+", " ", s).strip()
+
+
+def version_of(raw: str):
+    """The remixer/edit words of a title or file name, or None when it names no
+    version. An empty set means a version with no name ("(Remix)")."""
+    s = _EXT_RE.sub("", unicodedata.normalize("NFKD", raw or "")).lower()
+    s = _NEUTRAL_RE.sub(" ", s)
+    # Bracketed parts count with a marker anywhere; a bare " - Bicep Remix" part only
+    # when it ends in one, so a title like "Dub Something" stays a title.
+    parts = [(p, False) for p in _BRACKET_RE.findall(s)]
+    parts += [(p, True) for p in re.split(r"\s[-–—]\s", _BRACKET_RE.sub(" ", s))[1:]]
+    found = None
+    for p, bare in parts:
+        words = re.sub(r"[^\w\s]", " ", p).replace("_", " ").split()
+        if _VERSION_MARKERS.intersection(words[-1:] if bare else words):
+            found = (found or set()) | (set(words) - _VERSION_GENERIC)
+    return found
+
+
+def versions_conflict(a: str, b: str) -> bool:
+    """True when two names are different versions of a song: one is a remix/edit and
+    the other isn't, or both name a remixer and share no word of it."""
+    return _conflict(version_of(a), version_of(b))
+
+
+def _conflict(va, vb) -> bool:
+    if va is None or vb is None:
+        return (va is None) != (vb is None)
+    return bool(va and vb and not va & vb)
+
+
+_VERSION_PENALTY = 25
 
 
 def _token_sort(s: str) -> str:
@@ -105,28 +150,37 @@ def _candidates(track: dict) -> list[str]:
     return [c for c in out if c]
 
 
-def _best_for_track(t, norm_files, norm_index, sorted_index, floor, exclude):
-    """Best (score, original filename) for one track. ``exclude`` is a set of original
-    filenames to skip (pairs the user rejected); when non-empty the file lists are
-    filtered first, so the common no-rejection case pays nothing."""
+def _best_for_track(t, entries, norm_index, sorted_index, floor, exclude, names):
+    """Best (score, file index) for one track. ``entries`` are (normalized, file index,
+    version) per matchable string. ``exclude`` is a set of filenames to skip (pairs the
+    user rejected); when non-empty the lists are filtered first, so the common
+    no-rejection case pays nothing. A hit that is a different version of the song
+    (another remix, or remix vs original) loses _VERSION_PENALTY points."""
     if exclude:
-        keep = [i for i, (_, orig) in enumerate(norm_files) if orig not in exclude]
+        keep = [i for i, e in enumerate(entries) if names[e[1]] not in exclude]
         if not keep:
             return 0.0, None
-        norm_files = [norm_files[i] for i in keep]
+        entries = [entries[i] for i in keep]
         norm_index = [norm_index[i] for i in keep]
         sorted_index = [sorted_index[i] for i in keep]
 
+    tver = version_of(t.get("name") or "")
     best_score = 0.0
-    best_file = None
+    best_idx = None
+
+    def consider(score, i):
+        nonlocal best_score, best_idx
+        if _conflict(tver, entries[i][2]):
+            score -= _VERSION_PENALTY
+        if score >= floor and score > best_score:
+            best_score, best_idx = score, entries[i][1]
+
     # 1) Strict match: title / "artist - title" / "alias - title" / dedup_key.
     for cand in _candidates(t):
-        hit = process.extractOne(
-            _token_sort(cand), sorted_index, scorer=fuzz.ratio, score_cutoff=floor
-        )
-        if hit and hit[1] > best_score:
-            best_score = hit[1]
-            best_file = norm_files[hit[2]][1]  # original filename
+        for _, score, i in process.extract(
+            _token_sort(cand), sorted_index, scorer=fuzz.ratio, score_cutoff=floor, limit=5
+        ):
+            consider(score, i)
 
     # 2) Alias-anywhere: if a file CONTAINS the artist's alias (any position), strip
     #    the alias and subset-match the remaining title.
@@ -141,13 +195,11 @@ def _best_for_track(t, norm_files, norm_index, sorted_index, floor, exclude):
             if not idxs:
                 continue
             cleaned = [_strip_alias(norm_index[i], alias) for i in idxs]
-            hit = process.extractOne(
-                title, cleaned, scorer=fuzz.token_set_ratio, score_cutoff=floor
-            )
-            if hit and hit[1] > best_score:
-                best_score = hit[1]
-                best_file = norm_files[idxs[hit[2]]][1]
-    return best_score, best_file
+            for _, score, j in process.extract(
+                title, cleaned, scorer=fuzz.token_set_ratio, score_cutoff=floor, limit=5
+            ):
+                consider(score, idxs[j])
+    return best_score, best_idx
 
 
 def _artist_in(nf: str, track: dict) -> bool:
@@ -164,20 +216,30 @@ def _artist_in(nf: str, track: dict) -> bool:
     return False
 
 
-def match_kind(score: int, filename: str, track: dict, exact_at: int = 98) -> str:
-    """'exact', 'title' (high score but the file never names the artist) or 'fuzzy'."""
+def match_kind(score: int, filename: str, track: dict, exact_at: int = 98,
+               tag: str = "") -> str:
+    """'exact', 'title' (high score but neither the file name nor its tags name the
+    artist) or 'fuzzy'. A one-word title with no artist is fuzzy whatever the score:
+    "Intro" or "Home" matches too many files to trust."""
     if score < exact_at:
         return "fuzzy"
-    return "exact" if _artist_in(normalize(filename), track) else "title"
+    if _artist_in(normalize(filename), track) or (tag and _artist_in(normalize(tag), track)):
+        return "exact"
+    return "fuzzy" if len(normalize(track.get("name") or "").split()) <= 1 else "title"
 
 
 def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
-                    progress_cb=None, rejected: dict = None, exact_at: int = 98) -> list[dict]:
+                    progress_cb=None, rejected: dict = None, exact_at: int = 98,
+                    tags: list = None, paths: list = None) -> list[dict]:
     """Return tracks that fuzzily match some file in the folder, at score >= floor.
 
     For each track we take the best score across its candidate strings vs every
-    (normalized) filename, keeping the single best filename. Returns one row per
-    matched track: {track_id, track_name, artist_name, filename, score}.
+    (normalized) filename, keeping the single best file. Returns one row per matched
+    track: {track_id, track_name, artist_name, url, filename, path, score, kind, tags}.
+
+    ``filenames`` may repeat (same name in two folders). ``tags`` and ``paths`` are
+    optional lists in the same order: "Artist - Title" read from each file's tags (a
+    second string it can match on) and its full path.
 
     ``rejected`` (optional) maps track_id -> set of filenames the user said are NOT
     the same song; those exact (track, file) pairs are never returned, though the
@@ -187,17 +249,22 @@ def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
     of tracks processed so the caller can show a progress bar. This is CPU-bound;
     callers should run it off the event loop (``asyncio.to_thread``).
     """
-    norm_files = []
-    for f in filenames:
+    tags = tags or [""] * len(filenames)
+    paths = paths or [None] * len(filenames)
+    entries = []
+    for i, f in enumerate(filenames):
         if not is_audio(f):
             continue
         nf = normalize(f)
         if nf:
-            norm_files.append((nf, f))
-    if not norm_files:
+            entries.append((nf, i, version_of(f)))
+        tf = normalize(tags[i])
+        if tf and tf != nf:
+            entries.append((tf, i, version_of(tags[i])))
+    if not entries:
         return []
 
-    norm_index = [nf for nf, _ in norm_files]
+    norm_index = [e[0] for e in entries]
     # Pre-sort every file's tokens ONCE; comparing pre-sorted strings with plain
     # ratio is equivalent to token_sort_ratio but avoids re-sorting F files per query.
     sorted_index = [_token_sort(nf) for nf in norm_index]
@@ -205,18 +272,21 @@ def match_filenames(tracks: list[dict], filenames: list[str], floor: int = 90,
     matches = []
     for ti, t in enumerate(tracks):
         exclude = rejected.get(t["id"]) if rejected else None
-        best_score, best_file = _best_for_track(
-            t, norm_files, norm_index, sorted_index, floor, exclude
+        best_score, i = _best_for_track(
+            t, entries, norm_index, sorted_index, floor, exclude, filenames
         )
-        if best_file is not None:
+        if i is not None:
+            score = round(best_score)
             matches.append({
                 "track_id": t["id"],
                 "track_name": t.get("name"),
                 "artist_name": t.get("artist_name"),
                 "url": t.get("url"),  # so the review modal can open the track
-                "filename": best_file,
-                "score": round(best_score),
-                "kind": match_kind(round(best_score), best_file, t, exact_at),
+                "filename": filenames[i],
+                "path": paths[i],
+                "score": score,
+                "kind": match_kind(score, filenames[i], t, exact_at, tags[i]),
+                "tags": tags[i] or None,
             })
         if progress_cb is not None and (ti & 63) == 0:  # ~every 64 tracks
             progress_cb(ti + 1, total)

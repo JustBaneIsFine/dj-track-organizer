@@ -45,6 +45,11 @@ async def init_db() -> None:
         await _seed_settings(conn)
         from db import queries  # deferred: avoids a circular import at module load
         await queries.backfill_group_keys(conn)
+        # Refresh the query planner's statistics when they are missing or stale.
+        # analysis_limit keeps it to a sample, so it stays quick on big libraries.
+        await conn.execute("PRAGMA analysis_limit = 1000")
+        await conn.execute("PRAGMA optimize = 0x10002")
+        await queries.check_artist_counts(conn)
     finally:
         await conn.close()
 

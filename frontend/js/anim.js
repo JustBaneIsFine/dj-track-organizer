@@ -145,9 +145,9 @@ window.DJ = window.DJ || {};
   // Click-driven icon moves: [what was clicked, which icon, class, only when].
   const CLICK = [
     [".artist .mini", ".ic-arrows-clockwise", "fx-spin"],
-    [".mark.heard", ".chk", "fx-draw", (el) => !el.classList.contains("on")],
-    [".mark.later", ".mark-box", "fx-ring", (el) => !el.classList.contains("on")],
-    [".mark.later", ".ic", "fx-rewind", (el) => !el.classList.contains("on")],
+    [".mark.heard", ".chk", "fx-draw", (el) => !el.classList.contains("on") && !el.closest(".track.checked")],
+    [".mark.later", ".mark-box", "fx-ring", (el) => !el.classList.contains("on") && !el.closest(".track.revisit")],
+    [".mark.later", ".ic", "fx-rewind", (el) => !el.classList.contains("on") && !el.closest(".track.revisit")],
     [".star", ".ic", "fx-bounce"],
     [".chip", ".ic-download-simple", "fx-drop"],
     [".chip", ".ic-shopping-cart-simple", "fx-roll"],
@@ -218,9 +218,11 @@ window.DJ = window.DJ || {};
   function pills(scope) {
     for (const g of scope.querySelectorAll(".chip-group[data-pill]")) {
       let p = g.querySelector(":scope > .pill");
-      if (!on(1)) { if (p) p.remove(); g.classList.remove("has-pill"); continue; }
+      // Touch the class only when it changes: even a no-op add queues a mutation,
+      // which re-ran this every frame and kept the CPU busy while the window showed.
+      if (!on(1)) { if (p) p.remove(); if (g.classList.contains("has-pill")) g.classList.remove("has-pill"); continue; }
       if (!p) { p = document.createElement("span"); p.className = "pill"; g.prepend(p); }
-      g.classList.add("has-pill");
+      if (!g.classList.contains("has-pill")) g.classList.add("has-pill");
       const act = [...g.querySelectorAll(":scope > .chip.on:not(.no-pill)")].filter((c) => c.offsetParent);
       if (act.length !== 1) { p.style.opacity = "0"; p.dataset.shown = ""; p._box = null; continue; }
       const c = act[0], first = !p.dataset.shown;
