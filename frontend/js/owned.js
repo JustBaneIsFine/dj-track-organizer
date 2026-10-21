@@ -12,9 +12,9 @@ window.DJ.ownedMixin = {
 
   _audioExts: [".mp3", ".flac", ".wav", ".aif", ".aiff", ".m4a", ".aac", ".ogg", ".wma", ".alac"],
   checkKinds: [
-    { key: "exact", label: "Exact", why: "Artist and title are both in the file name or its tags" },
-    { key: "title", label: "Title only", why: "The title matches, but neither the file name nor its tags name the artist" },
-    { key: "fuzzy", label: "Fuzzy", why: "Close but not exact, or a one-word title with no artist to confirm it" },
+    { key: "exact", label: "Exact", why: "Same words as the track, and the file name or tags name its artist" },
+    { key: "title", label: "Likely", why: "The words match, but the artist isn't confirmed or one word is spelled differently" },
+    { key: "fuzzy", label: "Possible", why: "Similar, but some words differ. Listen before deciding" },
   ],
 
   // Top bar button: open the list of saved checks, or go straight to picking a

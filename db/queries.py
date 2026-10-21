@@ -805,11 +805,14 @@ async def create_check(
 
 
 async def add_check_items(conn: aiosqlite.Connection, check_id: int, items: list[dict]) -> int:
-    """Insert matches, skipping tracks this check already holds. Returns how many were new."""
+    """Insert matches, skipping tracks this check already holds. Undecided items are
+    matched again: they take the new file and kind, and go when nothing matches now.
+    Returns how many were new."""
     async with conn.execute(
-        "SELECT track_id FROM owned_check_items WHERE check_id = ?", (check_id,)
+        "SELECT id, track_id, state FROM owned_check_items WHERE check_id = ?", (check_id,)
     ) as cur:
-        have = {r["track_id"] for r in await cur.fetchall()}
+        have = {r["track_id"]: (r["id"], r["state"]) for r in await cur.fetchall()}
+    by_track = {m["track_id"]: m for m in items}
     rows = [(check_id, m["track_id"], m["filename"], m.get("path"), m["score"], m["kind"],
              m.get("tags"))
             for m in items if m["track_id"] not in have]
@@ -818,6 +821,22 @@ async def add_check_items(conn: aiosqlite.Connection, check_id: int, items: list
             "INSERT INTO owned_check_items (check_id, track_id, filename, path, score, kind, tags) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)", rows,
         )
+    redo, gone = [], []
+    for track_id, (item_id, state) in have.items():
+        if state not in ("pending", "skipped"):
+            continue
+        m = by_track.get(track_id)
+        if m is None:
+            gone.append((item_id,))
+        else:
+            redo.append((m["filename"], m.get("path"), m["score"], m["kind"], m.get("tags"), item_id))
+    if redo:
+        await conn.executemany(
+            "UPDATE owned_check_items SET filename = ?, path = ?, score = ?, kind = ?, tags = ? "
+            "WHERE id = ?", redo,
+        )
+    if gone:
+        await conn.executemany("DELETE FROM owned_check_items WHERE id = ?", gone)
     await conn.execute(
         "UPDATE owned_checks SET updated_at = ?, status = 'open' WHERE id = ?", (now_iso(), check_id)
     )

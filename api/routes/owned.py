@@ -56,7 +56,6 @@ async def _match_into_check(
     if floor is None:
         floor = int(await queries.get_setting(db, "owned_match_floor", 90))
     floor = min(100, max(0, floor))
-    exact_at = int(await queries.get_setting(db, "owned_match_threshold", 98))
     tracks = await queries.list_tracks(
         db, include_owned=True, limit=-1,  # -1: no limit, libraries pass 100k
         artist_ids=[artist_id] if artist_id else None,
@@ -90,7 +89,7 @@ async def _match_into_check(
             await queries.save_file_tags(db, fresh)
         matches = await asyncio.to_thread(
             match.match_filenames, candidates, filenames, floor,
-            stage(50, 50) if paths else stage(0, 100), rejected, exact_at, tags, paths or None,
+            stage(50, 50) if paths else stage(0, 100), rejected, tags, paths or None,
         )
     finally:
         if token:

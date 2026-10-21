@@ -687,8 +687,8 @@
               </div>
               <span style="flex:1"></span>
               <label class="cs-fuzzy" :class="{ danger: fuzzyDanger() }"
-                     data-tip="Fuzzy matches under this score are hidden, not rejected. Under 90% they are often a different track.">
-                <span><i class="ic ic-warning" x-show="fuzzyDanger()"></i> Show fuzzy matches from <b x-text="fuzzyFrom() + '%'"></b></span>
+                     data-tip="Possible matches under this score are hidden, not rejected. Under 90% they are often a different track.">
+                <span><i class="ic ic-warning" x-show="fuzzyDanger()"></i> Show possible matches from <b x-text="fuzzyFrom() + '%'"></b></span>
                 <input type="range" min="85" :max="fuzzyMax()" step="1" :value="fuzzyFrom()"
                        :style="`--pos:${(fuzzyFrom() - 85) / (fuzzyMax() - 85) * 100}%; --zone:${5 / (fuzzyMax() - 85) * 100}%`"
                        @input="setFuzzyFrom($event.target.value)" @change="setFuzzyFrom($event.target.value, true)" />
@@ -754,7 +754,7 @@
                     <div>
                       <div x-show="!checkHidden()"><i class="ic ic-check-circle"></i> Every match in this check is decided.</div>
                       <div x-show="checkHidden()"><i class="ic ic-check-circle"></i> Every shown match is decided.
-                        <span x-text="`${checkHidden().toLocaleString()} fuzzy matches are hidden below ${fuzzyFrom()}%.`"></span></div>
+                        <span x-text="`${checkHidden().toLocaleString()} possible matches are hidden below ${fuzzyFrom()}%.`"></span></div>
                       <button class="primary" style="margin-top:12px" @click="closeChecks()">Done</button>
                     </div>
                   </template>
